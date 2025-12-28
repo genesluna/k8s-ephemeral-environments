@@ -535,11 +535,13 @@ def update_issue(
     repo: str,
     issue_number: int,
     story: UserStory,
-    existing_labels: List[dict],
+    existing_issue: dict,
     dry_run: bool = False
 ) -> bool:
     """Update an existing GitHub issue. Returns success status."""
     body = build_issue_body(story)
+    existing_labels = existing_issue.get("labels", [])
+    existing_state = existing_issue.get("state", "OPEN").upper()
 
     # Determine labels to add/remove
     desired_labels = {
@@ -563,12 +565,22 @@ def update_issue(
         else set()
     )
 
+    # Determine if issue should be closed/reopened based on status
+    is_done = story.status.lower() == "done"
+    is_open = existing_state == "OPEN"
+    should_close = is_done and is_open
+    should_reopen = not is_done and not is_open
+
     if dry_run:
         logger.info(f"  [DRY-RUN] Would update issue #{issue_number}")
         if labels_to_add:
             logger.info(f"  [DRY-RUN] Add labels: {labels_to_add}")
         if labels_to_remove:
             logger.info(f"  [DRY-RUN] Remove labels: {labels_to_remove}")
+        if should_close:
+            logger.info(f"  [DRY-RUN] Would close issue #{issue_number}")
+        if should_reopen:
+            logger.info(f"  [DRY-RUN] Would reopen issue #{issue_number}")
         return True
 
     # Build the update command with body and labels in a single API call
@@ -589,6 +601,29 @@ def update_issue(
     if returncode != 0:
         logger.error(f"  Error updating issue #{issue_number}: {stderr}")
         return False
+
+    # Close or reopen issue based on status
+    if should_close:
+        returncode, _, stderr = run_gh_command([
+            "issue", "close", str(issue_number),
+            "--repo", f"{owner}/{repo}"
+        ])
+        if returncode != 0:
+            logger.warning(f"  Updated issue #{issue_number} (close failed: {stderr})")
+        else:
+            logger.info(f"  Updated and closed issue #{issue_number}")
+        return True
+
+    if should_reopen:
+        returncode, _, stderr = run_gh_command([
+            "issue", "reopen", str(issue_number),
+            "--repo", f"{owner}/{repo}"
+        ])
+        if returncode != 0:
+            logger.warning(f"  Updated issue #{issue_number} (reopen failed: {stderr})")
+        else:
+            logger.info(f"  Updated and reopened issue #{issue_number}")
+        return True
 
     logger.info(f"  Updated issue #{issue_number}")
     return True
@@ -731,7 +766,7 @@ def sync_stories(
                     owner, repo,
                     issue["number"],
                     story,
-                    issue.get("labels", []),
+                    issue,
                     dry_run
                 ):
                     success = False
