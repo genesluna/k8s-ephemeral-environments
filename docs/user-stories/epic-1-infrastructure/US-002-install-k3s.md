@@ -1,8 +1,6 @@
 # US-002: Install and Configure k3s Cluster
 
-## Status
-
-**Done**
+**Status:** Done
 
 ## User Story
 
