@@ -35,8 +35,12 @@ jobs:
 
       - name: Set environment variables
         run: |
+          # Sanitize branch name for K8s labels (replace / with -, truncate to 63 chars)
+          BRANCH_RAW="${{ github.head_ref }}"
+          BRANCH_SANITIZED=$(echo "$BRANCH_RAW" | sed 's/[^a-zA-Z0-9._-]/-/g' | cut -c1-63)
+
           echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
-          echo "BRANCH_NAME=${{ github.head_ref }}" >> $GITHUB_ENV
+          echo "BRANCH_NAME=$BRANCH_SANITIZED" >> $GITHUB_ENV
           echo "COMMIT_SHA=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
           echo "CREATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
           echo "NAMESPACE=pr-${{ github.event.pull_request.number }}" >> $GITHUB_ENV
