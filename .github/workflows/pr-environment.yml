@@ -2,7 +2,7 @@ name: PR Environment
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize]
+    types: [opened, reopened, synchronize, closed]
 
 # Prevent concurrent runs for the same PR
 concurrency:
@@ -12,6 +12,7 @@ concurrency:
 jobs:
   create-namespace:
     name: Create PR Namespace
+    if: github.event.action != 'closed'
     runs-on: arc-runner-set
     timeout-minutes: 5
 
@@ -96,3 +97,44 @@ jobs:
           echo "| Commit | \`${COMMIT_SHA:0:7}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "ResourceQuota and LimitRange have been applied." >> $GITHUB_STEP_SUMMARY
+
+  destroy-namespace:
+    name: Destroy PR Namespace
+    if: github.event.action == 'closed'
+    runs-on: arc-runner-set
+    timeout-minutes: 5
+
+    steps:
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/arm64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+          kubectl version --client
+
+      - name: Set namespace
+        run: |
+          echo "NAMESPACE=pr-${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+
+      - name: Delete namespace
+        run: |
+          if kubectl get namespace "$NAMESPACE" >/dev/null 2>&1; then
+            echo "Deleting namespace $NAMESPACE..."
+            kubectl delete namespace "$NAMESPACE" --wait=true --timeout=5m
+            echo "Namespace $NAMESPACE deleted successfully"
+          else
+            echo "Namespace $NAMESPACE does not exist, nothing to delete"
+          fi
+
+      - name: Summary
+        run: |
+          echo "## PR Environment Destroyed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Namespace | \`$NAMESPACE\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| PR Number | #${{ github.event.pull_request.number }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Action | ${{ github.event.action }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Merged | ${{ github.event.pull_request.merged }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All resources have been cleaned up." >> $GITHUB_STEP_SUMMARY
