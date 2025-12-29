@@ -49,30 +49,26 @@ RUN mkdir -p apps/api/dist/public && \
 # Stage 3: Production image
 FROM node:22-alpine AS runner
 
-RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
-
 WORKDIR /app
 
 # Create non-root user
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nestjs
 
-# Copy workspace config for production install
-# Note: pnpm needs all workspace package.json files to parse the lockfile
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
-COPY apps/api/package.json apps/api/
-COPY apps/web/package.json apps/web/
+# Copy node_modules from deps stage (contains all deps including production)
+# pnpm hoists common deps to root, so we need both locations
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
 
-# Install production dependencies only
-RUN pnpm install --frozen-lockfile --prod --filter @demo-app/api
-
-# Copy built application
-COPY --from=builder /app/apps/api/dist ./dist
+# Copy built application (includes public folder with web assets)
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
 
 # Set ownership
 RUN chown -R nestjs:nodejs /app
 
 USER nestjs
+
+WORKDIR /app/apps/api
 
 ENV NODE_ENV=production
 ENV PORT=3000
