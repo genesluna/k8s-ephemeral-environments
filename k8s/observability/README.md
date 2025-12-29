@@ -7,8 +7,8 @@ This directory contains the configuration for the k8s-ephemeral-environments obs
 | Component | Description | Status |
 |-----------|-------------|--------|
 | [kube-prometheus-stack](./kube-prometheus-stack/) | Prometheus, Grafana, Alertmanager | Deployed |
-| loki | Log aggregation | Planned (US-012) |
-| promtail | Log collection | Planned (US-012) |
+| [loki](./loki/) | Log aggregation | Deployed |
+| [promtail](./promtail/) | Log collection | Deployed |
 
 ## Architecture
 
@@ -83,8 +83,8 @@ The observability stack is designed to stay within ~4GB total memory:
 | node-exporter | 64Mi |
 | kube-state-metrics | 64Mi |
 | Prometheus Operator | 128Mi |
-| Loki (planned) | 1024Mi |
-| Promtail (planned) | 128Mi |
+| Loki | 1024Mi |
+| Promtail | 128Mi |
 | **Total** | **~3.3GB** |
 
 ## Namespace
@@ -127,6 +127,12 @@ kubectl logs -n observability -l app.kubernetes.io/name=grafana --tail=100
 
 # Alertmanager
 kubectl logs -n observability -l app.kubernetes.io/name=alertmanager --tail=100
+
+# Loki
+kubectl logs -n observability -l app.kubernetes.io/name=loki --tail=100
+
+# Promtail
+kubectl logs -n observability -l app.kubernetes.io/name=promtail --tail=100
 ```
 
 ### Port Forward for Debugging

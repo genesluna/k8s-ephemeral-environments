@@ -145,6 +145,16 @@ grafana:
     datasources:
       enabled: true
 
+  # Additional data sources (Loki for logs)
+  # Using the gateway service which acts as a proxy to Loki
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      url: http://loki-gateway.observability.svc.cluster.local
+      access: proxy
+      isDefault: false
+      editable: true
+
 # =============================================================================
 # Node Exporter Configuration
 # =============================================================================

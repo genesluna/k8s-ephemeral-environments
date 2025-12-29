@@ -1,0 +1,135 @@
+# Promtail Helm Values
+# DaemonSet configuration for k3s log collection
+# Chart: grafana/promtail
+
+# =============================================================================
+# Promtail Configuration
+# =============================================================================
+config:
+  # Loki endpoint using the gateway service (nginx proxy to Loki)
+  clients:
+    - url: http://loki-gateway.observability.svc.cluster.local/loki/api/v1/push
+      # Retry configuration
+      backoff_config:
+        min_period: 500ms
+        max_period: 5m
+        max_retries: 10
+
+  # Server configuration
+  server:
+    http_listen_port: 3101
+
+  # Positions file for tracking log progress
+  positions:
+    filename: /run/promtail/positions.yaml
+
+  # Scrape configurations
+  scrapeConfigs:
+    # Scrape Kubernetes pod logs
+    - job_name: kubernetes-pods
+      kubernetes_sd_configs:
+        - role: pod
+      # Use CRI log format (k3s uses containerd)
+      pipeline_stages:
+        - cri: {}
+      relabel_configs:
+        # Keep only pods that are running
+        - source_labels: [__meta_kubernetes_pod_phase]
+          action: drop
+          regex: (Failed|Succeeded)
+
+        # Extract node name
+        - source_labels: [__meta_kubernetes_pod_node_name]
+          target_label: node
+
+        # Extract namespace
+        - source_labels: [__meta_kubernetes_namespace]
+          target_label: namespace
+
+        # Extract pod name
+        - source_labels: [__meta_kubernetes_pod_name]
+          target_label: pod
+
+        # Extract container name
+        - source_labels: [__meta_kubernetes_pod_container_name]
+          target_label: container
+
+        # Extract app label
+        - source_labels: [__meta_kubernetes_pod_label_app]
+          target_label: app
+
+        # Extract app.kubernetes.io/name label
+        - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+          target_label: app_name
+
+        # Extract app.kubernetes.io/component label
+        - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_component]
+          target_label: component
+
+        # Set job name from namespace/pod
+        - action: replace
+          replacement: $1
+          separator: /
+          source_labels:
+            - __meta_kubernetes_namespace
+            - __meta_kubernetes_pod_name
+          target_label: job
+
+        # Map to log file path in /var/log/pods
+        - replacement: /var/log/pods/*$1/*.log
+          separator: /
+          source_labels:
+            - __meta_kubernetes_pod_uid
+            - __meta_kubernetes_pod_container_name
+          target_label: __path__
+
+# =============================================================================
+# Resource Limits
+# =============================================================================
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+# =============================================================================
+# DaemonSet Configuration
+# =============================================================================
+# Tolerations to run on all nodes
+tolerations:
+  - effect: NoSchedule
+    operator: Exists
+
+# Security context
+containerSecurityContext:
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+# =============================================================================
+# Volume Mounts for k3s Log Access
+# =============================================================================
+# The Promtail Helm chart mounts /var/log/pods and /var/log/containers by default
+# which is what k3s/containerd uses - no extra configuration needed
+
+# =============================================================================
+# Service Account
+# =============================================================================
+serviceAccount:
+  create: true
+  name: promtail
+
+# RBAC for reading pods
+rbac:
+  create: true
+
+# =============================================================================
+# Monitoring
+# =============================================================================
+# Disable ServiceMonitor (Prometheus can scrape Promtail metrics if needed later)
+serviceMonitor:
+  enabled: false

@@ -1,0 +1,157 @@
+# Loki Helm Values
+# SingleBinary mode optimized for single-node ARM64 k3s cluster
+# Chart: grafana/loki
+
+# Consistent service naming for Promtail and Grafana datasource URLs
+fullnameOverride: loki
+
+# Deployment mode: SingleBinary runs all components in a single process
+# Ideal for small deployments up to ~20GB/day of logs
+deploymentMode: SingleBinary
+
+# =============================================================================
+# Loki Configuration
+# =============================================================================
+loki:
+  # Disable multi-tenancy for simpler single-tenant setup
+  auth_enabled: false
+
+  # Common configuration
+  commonConfig:
+    # Single replica, no replication needed
+    replication_factor: 1
+
+  # Storage configuration - filesystem for single-node
+  storage:
+    type: filesystem
+
+  # Schema configuration
+  schemaConfig:
+    configs:
+      - from: "2024-01-01"
+        store: tsdb
+        object_store: filesystem
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+
+  # Retention and limits
+  limits_config:
+    # 7 days retention
+    retention_period: 168h
+    # Ingestion limits
+    ingestion_rate_mb: 4
+    ingestion_burst_size_mb: 6
+    # Query limits
+    max_query_series: 500
+    max_entries_limit_per_query: 5000
+
+  # Compactor for retention enforcement
+  compactor:
+    retention_enabled: true
+    delete_request_store: filesystem
+    working_directory: /var/loki/compactor
+
+# =============================================================================
+# SingleBinary Configuration
+# =============================================================================
+singleBinary:
+  replicas: 1
+
+  # Persistence using k3s local-path provisioner
+  persistence:
+    enabled: true
+    storageClass: local-path
+    size: 5Gi
+
+  # Resource limits (target: < 1GB RAM)
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+  # Pod security context
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+
+  # Container security context
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+
+# =============================================================================
+# Disable Distributed Components (not needed for SingleBinary)
+# =============================================================================
+read:
+  replicas: 0
+
+write:
+  replicas: 0
+
+backend:
+  replicas: 0
+
+# =============================================================================
+# Gateway Configuration
+# =============================================================================
+gateway:
+  # Disable anti-affinity for single-node cluster
+  affinity: {}
+
+  # Resource limits
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+  # Pod security context
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 101
+    runAsGroup: 101
+    fsGroup: 101
+
+  # Container security context
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+
+# =============================================================================
+# Disable Optional Components
+# =============================================================================
+# Disable monitoring features not needed for this setup
+monitoring:
+  selfMonitoring:
+    enabled: false
+    grafanaAgent:
+      installOperator: false
+  lokiCanary:
+    enabled: false
+
+# Disable test pod
+test:
+  enabled: false
+
+# Disable chunk cache (not needed for small deployments)
+chunksCache:
+  enabled: false
+
+# Disable results cache
+resultsCache:
+  enabled: false
