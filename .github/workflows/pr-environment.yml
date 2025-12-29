@@ -265,24 +265,40 @@ jobs:
         run: |
           echo "Running in-cluster health check..."
 
-          # Wait for pod to be fully ready (not just running, but all containers ready)
-          echo "Waiting for pod to be ready..."
-          kubectl wait --for=condition=Ready pod \
-            -l app.kubernetes.io/name=demo-app \
-            -n "$NAMESPACE" \
-            --timeout=120s
+          # Deployment rollout was already verified in previous step
+          # Find a pod that is actually Ready and not terminating
+          # Maximum wait: 30 iterations * 2 seconds = 60 seconds
+          echo "Finding a Ready pod..."
+          POD_NAME=""
+          for i in {1..30}; do
+            # Get Running pods with Ready=True and no deletionTimestamp (excludes terminating pods)
+            POD_NAME=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=demo-app \
+              --field-selector=status.phase=Running \
+              -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.metadata.deletionTimestamp}{" "}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' | \
+              grep -E "^[^ ]+  True$" | head -1 | awk '{print $1}')
 
-          # Small stabilization delay to ensure pod is fully operational
-          sleep 3
+            if [ -n "$POD_NAME" ]; then
+              echo "Found Ready pod: $POD_NAME"
+              break
+            fi
 
-          # Get the ready pod name (kubectl wait already verified pod is Ready)
-          POD_NAME=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=demo-app \
-            --field-selector=status.phase=Running \
-            -o jsonpath='{.items[0].metadata.name}')
+            echo "Waiting for Ready pod (attempt $i/30)..."
+
+            # Show pod states every 10th attempt for debugging
+            if [ $((i % 10)) -eq 0 ]; then
+              echo "Current pod states:"
+              kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=demo-app -o wide
+            fi
+
+            sleep 2
+          done
 
           if [ -z "$POD_NAME" ]; then
-            echo "ERROR: No ready pod found"
+            echo "ERROR: No ready pod found after 60 seconds"
+            echo "=== Pod Status ==="
             kubectl get pods -n "$NAMESPACE" -o wide
+            echo "=== Pod Descriptions ==="
+            kubectl describe pods -n "$NAMESPACE" -l app.kubernetes.io/name=demo-app | tail -50
             exit 1
           fi
 
