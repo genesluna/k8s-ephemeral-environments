@@ -10,7 +10,11 @@ destroyed when their corresponding PRs were closed.
 | Schedule | Every 6 hours (0:00, 6:00, 12:00, 18:00 UTC) |
 | Purpose | Safety net for failed webhook-based cleanup |
 | Age Threshold | Only deletes namespaces older than 24 hours |
-| Image | `bitnami/kubectl:1.31` (ARM64 compatible) |
+| Image | `bitnami/kubectl:latest` (ARM64 compatible) |
+
+> **Note:** We use `:latest` instead of a pinned version because specific version tags
+> (e.g., `1.30`, `1.31`) lack ARM64 images on Docker Hub. The `:latest` tag includes
+> multi-arch support for both amd64 and arm64.
 
 ## Prerequisites
 

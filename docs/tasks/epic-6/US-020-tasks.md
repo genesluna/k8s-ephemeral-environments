@@ -67,7 +67,7 @@
 
 ## Additional Implementation Notes
 
-- CronJob uses `bitnami/kubectl:1.31` image (ARM64 compatible)
+- CronJob uses `bitnami/kubectl:latest` image (ARM64 compatible)
 - Script embedded in ConfigMap to avoid custom container image
 - Runbook created at `docs/runbooks/cleanup-job.md`
 - Platform namespace created for cleanup job and future platform components
