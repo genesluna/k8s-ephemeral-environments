@@ -275,10 +275,10 @@ jobs:
           # Small stabilization delay to ensure pod is fully operational
           sleep 3
 
-          # Get the ready pod name
+          # Get the ready pod name (kubectl wait already verified pod is Ready)
           POD_NAME=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=demo-app \
             --field-selector=status.phase=Running \
-            -o jsonpath='{.items[?(@.status.conditions[?(@.type=="Ready")].status=="True")].metadata.name}' | awk '{print $1}')
+            -o jsonpath='{.items[0].metadata.name}')
 
           if [ -z "$POD_NAME" ]; then
             echo "ERROR: No ready pod found"
