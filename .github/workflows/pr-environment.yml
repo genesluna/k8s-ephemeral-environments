@@ -248,6 +248,7 @@ jobs:
 
     permissions:
       contents: read
+      pull-requests: write
 
     steps:
       - name: Checkout repository
@@ -431,6 +432,122 @@ jobs:
             exit 1
           fi
 
+      - name: Comment on PR
+        continue-on-error: true
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const marker = '<!-- k8s-ee-pr-env -->';
+            const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+            const previewUrl = process.env.PREVIEW_URL || 'URL not available';
+            const namespace = process.env.NAMESPACE || 'unknown';
+            const shortSha = process.env.SHORT_SHA || 'unknown';
+            const branchName = process.env.BRANCH_NAME || 'unknown';
+
+            const body = [
+              marker,
+              '## 🚀 Preview Environment Ready',
+              '',
+              '| Property | Value |',
+              '|----------|-------|',
+              '| **Status** | ✅ Deployed |',
+              `| **Preview URL** | [${previewUrl}](${previewUrl}) |`,
+              `| **Namespace** | \`${namespace}\` |`,
+              `| **Commit** | \`${shortSha}\` |`,
+              `| **Branch** | \`${branchName}\` |`,
+              `| **Updated** | ${timestamp} |`,
+              '',
+              '---',
+              '<sub>🤖 Managed by GitHub Actions</sub>',
+            ].join('\n');
+
+            // Find existing comment (fetch up to 100 to handle busy PRs)
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+
+            const existingComment = comments.find(c => c.body.includes(marker));
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: body,
+              });
+              console.log(`Updated comment: ${existingComment.html_url}`);
+            } else {
+              const { data: newComment } = await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body,
+              });
+              console.log(`Created comment: ${newComment.html_url}`);
+            }
+
+      - name: Comment on PR (failure)
+        if: failure()
+        continue-on-error: true
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const marker = '<!-- k8s-ee-pr-env -->';
+            const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const namespace = process.env.NAMESPACE || 'unknown';
+            const shortSha = process.env.SHORT_SHA || 'unknown';
+            const branchName = process.env.BRANCH_NAME || 'unknown';
+
+            const body = [
+              marker,
+              '## ⚠️ Preview Environment Failed',
+              '',
+              '| Property | Value |',
+              '|----------|-------|',
+              '| **Status** | ❌ Deployment Failed |',
+              `| **Namespace** | \`${namespace}\` |`,
+              `| **Commit** | \`${shortSha}\` |`,
+              `| **Branch** | \`${branchName}\` |`,
+              `| **Updated** | ${timestamp} |`,
+              '',
+              `[View workflow logs](${runUrl})`,
+              '',
+              '---',
+              '<sub>🤖 Managed by GitHub Actions</sub>',
+            ].join('\n');
+
+            // Find existing comment (fetch up to 100 to handle busy PRs)
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+
+            const existingComment = comments.find(c => c.body.includes(marker));
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: body,
+              });
+              console.log(`Updated comment: ${existingComment.html_url}`);
+            } else {
+              const { data: newComment } = await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body,
+              });
+              console.log(`Created comment: ${newComment.html_url}`);
+            }
+
       - name: Summary
         if: always()
         run: |
@@ -453,6 +570,7 @@ jobs:
 
     permissions:
       contents: read
+      pull-requests: write
 
     steps:
       - name: Install kubectl
@@ -523,6 +641,59 @@ jobs:
           else
             echo "Namespace $NAMESPACE does not exist, nothing to delete"
           fi
+
+      - name: Update PR comment
+        continue-on-error: true
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const marker = '<!-- k8s-ee-pr-env -->';
+            const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+            const merged = '${{ github.event.pull_request.merged }}' === 'true';
+            const namespace = process.env.NAMESPACE || 'unknown';
+
+            const body = [
+              marker,
+              '## 🗑️ Preview Environment Destroyed',
+              '',
+              '| Property | Value |',
+              '|----------|-------|',
+              '| **Status** | 🏁 Cleaned up |',
+              `| **Namespace** | \`${namespace}\` |`,
+              `| **Merged** | ${merged ? 'Yes' : 'No'} |`,
+              `| **Destroyed** | ${timestamp} |`,
+              '',
+              '---',
+              '<sub>🤖 Managed by GitHub Actions</sub>',
+            ].join('\n');
+
+            // Find existing comment (fetch up to 100 to handle busy PRs)
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+
+            const existingComment = comments.find(c => c.body.includes(marker));
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: body,
+              });
+              console.log(`Updated comment: ${existingComment.html_url}`);
+            } else {
+              const { data: newComment } = await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body,
+              });
+              console.log(`Created comment: ${newComment.html_url}`);
+            }
 
       - name: Summary
         if: always()
