@@ -57,13 +57,24 @@
 - `deploy-application` - Deploys via Helm with health check and image digest
 
 ### Preview URL
-- Pattern: `https://pr-{number}.k8s-ee.genesluna.dev`
+- Pattern: `https://{project-id}-pr-{number}.k8s-ee.genesluna.dev`
+- Example: `https://k8s-ee-pr-28.k8s-ee.genesluna.dev`
+- Multi-tenant: PROJECT_ID prevents URL collisions across projects
 - SSL: Let's Encrypt production certificates via Traefik DNS-01 challenge
 
 ### Security Hardening
 - **Dockerfile:** Multi-stage build with production-only dependencies (no devDependencies)
 - **RBAC:** Minimal permissions (no pods/exec)
-- **kubectl:** SHA256 verification on download
+- **kubectl:** SHA256 verification on download, pinned version
 - **NestJS:** Graceful shutdown hooks, bootstrap error handling
 - **Helmet:** CSP configured for SPA compatibility
 - **TypeScript:** Strict mode enabled
+- **Namespace ownership:** Verification via managed-by label + repository annotation
+- **Command injection:** Prevented via env block for user-controlled inputs
+
+### Enterprise Features
+- **Multi-tenant clusters:** PROJECT_ID prefix prevents namespace collisions
+- **PROJECT_ID validation:** Lowercase alphanumeric with hyphens, 1-20 chars
+- **Atomic deployments:** Helm --atomic flag for automatic rollback on failure
+- **Failed release cleanup:** Automatic cleanup of stuck Helm releases
+- **Consistent labels:** k8s-ee/project-id, k8s-ee/pr-number on all resources
