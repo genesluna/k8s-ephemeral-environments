@@ -33,8 +33,8 @@ spec:
             - sh
             - -c
             - |
-              echo "Waiting for PostgreSQL to be ready (timeout: 180s)..."
-              TIMEOUT=180
+              echo "Waiting for PostgreSQL to be ready (timeout: 120s)..."
+              TIMEOUT=120
               ELAPSED=0
               while ! nc -z {{ include "postgresql.serviceName" .Subcharts.postgresql }} 5432; do
                 if [ $ELAPSED -ge $TIMEOUT ]; then
