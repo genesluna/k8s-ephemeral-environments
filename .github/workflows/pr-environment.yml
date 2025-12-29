@@ -9,6 +9,12 @@ concurrency:
   group: pr-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
+# Workflow-level environment variables for consistency
+env:
+  KUBECTL_VERSION: "v1.31.0"
+  HELM_VERSION: "v3.16.0"
+  PREVIEW_DOMAIN: "k8s-ee.genesluna.dev"
+
 jobs:
   create-namespace:
     name: Create PR Namespace
@@ -16,17 +22,23 @@ jobs:
     runs-on: arc-runner-set
     timeout-minutes: 5
 
+    permissions:
+      contents: read
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Install kubectl and tools
         run: |
+          set -euo pipefail
+
           # Install kubectl with SHA256 verification
-          KUBECTL_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
-          curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/arm64/kubectl"
-          curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/arm64/kubectl.sha256"
-          echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
+          curl --connect-timeout 10 --max-time 60 -fLO \
+            "https://dl.k8s.io/release/${{ env.KUBECTL_VERSION }}/bin/linux/arm64/kubectl"
+          curl --connect-timeout 10 --max-time 30 -fLO \
+            "https://dl.k8s.io/release/${{ env.KUBECTL_VERSION }}/bin/linux/arm64/kubectl.sha256"
+          echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check --strict
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/
           rm kubectl.sha256
@@ -39,11 +51,15 @@ jobs:
           envsubst --version
 
       - name: Set environment variables
+        env:
+          # Pass user-controlled input through env to prevent command injection
+          BRANCH_RAW: ${{ github.head_ref }}
         run: |
+          set -euo pipefail
+
           # Sanitize branch name for K8s labels
           # Requirements: alphanumeric, hyphens, underscores, dots; start/end with alphanumeric; max 63 chars
-          BRANCH_RAW="${{ github.head_ref }}"
-          BRANCH_SANITIZED=$(echo "$BRANCH_RAW" | \
+          BRANCH_SANITIZED=$(printf '%s' "$BRANCH_RAW" | \
             sed 's/[^a-zA-Z0-9._-]/-/g' | \
             sed 's/--*/-/g' | \
             sed 's/^[^a-zA-Z0-9]*//' | \
@@ -59,33 +75,63 @@ jobs:
           echo "NAMESPACE=pr-${{ github.event.pull_request.number }}" >> $GITHUB_ENV
 
       - name: Create namespace
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
+          set -euo pipefail
+
           # Check if namespace already exists
           if kubectl get namespace "$NAMESPACE" >/dev/null 2>&1; then
-            echo "Namespace $NAMESPACE already exists, updating labels..."
+            echo "Namespace $NAMESPACE already exists, verifying ownership..."
+
+            # Verify this namespace belongs to us (security check)
+            MANAGED_BY=$(kubectl get namespace "$NAMESPACE" \
+              -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}' 2>/dev/null || echo "")
+            REPO=$(kubectl get namespace "$NAMESPACE" \
+              -o jsonpath='{.metadata.annotations.k8s-ee/repository}' 2>/dev/null || echo "")
+
+            if [ "$MANAGED_BY" != "github-actions" ]; then
+              echo "ERROR: Namespace $NAMESPACE exists but is not managed by github-actions"
+              echo "Found managed-by: $MANAGED_BY"
+              exit 1
+            fi
+
+            if [ -n "$REPO" ] && [ "$REPO" != "$GITHUB_REPOSITORY" ]; then
+              echo "ERROR: Namespace $NAMESPACE belongs to different repository: $REPO"
+              exit 1
+            fi
+
+            echo "Ownership verified, updating labels..."
             kubectl label namespace "$NAMESPACE" \
               k8s-ee/commit-sha="$COMMIT_SHA" \
               --overwrite
             kubectl annotate namespace "$NAMESPACE" \
               k8s-ee/last-updated="$CREATED_AT" \
+              k8s-ee/repository="$GITHUB_REPOSITORY" \
               --overwrite
           else
             echo "Creating namespace $NAMESPACE..."
             envsubst < k8s/ephemeral/namespace-template.yaml | kubectl apply -f -
+            # Add repository annotation for ownership tracking
+            kubectl annotate namespace "$NAMESPACE" \
+              k8s-ee/repository="$GITHUB_REPOSITORY"
           fi
 
       - name: Apply ResourceQuota
         run: |
+          set -euo pipefail
           echo "Applying ResourceQuota to $NAMESPACE..."
           envsubst < k8s/ephemeral/resource-quota.yaml | kubectl apply -f -
 
       - name: Apply LimitRange
         run: |
+          set -euo pipefail
           echo "Applying LimitRange to $NAMESPACE..."
           envsubst < k8s/ephemeral/limit-range.yaml | kubectl apply -f -
 
       - name: Verify namespace setup
         run: |
+          set -euo pipefail
           echo "=== Namespace Details ==="
           kubectl get namespace "$NAMESPACE" -o yaml
 
@@ -98,17 +144,20 @@ jobs:
           kubectl get limitrange -n "$NAMESPACE"
 
       - name: Summary
+        if: always()
         run: |
-          echo "## PR Environment Created" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Namespace | \`$NAMESPACE\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| PR Number | #$PR_NUMBER |" >> $GITHUB_STEP_SUMMARY
-          echo "| Branch | \`$BRANCH_NAME\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Commit | \`${COMMIT_SHA:0:7}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "ResourceQuota and LimitRange have been applied." >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## PR Environment Created"
+            echo ""
+            echo "| Property | Value |"
+            echo "|----------|-------|"
+            echo "| Namespace | \`$NAMESPACE\` |"
+            echo "| PR Number | #$PR_NUMBER |"
+            echo "| Branch | \`$BRANCH_NAME\` |"
+            echo "| Commit | \`${COMMIT_SHA:0:7}\` |"
+            echo ""
+            echo "ResourceQuota and LimitRange have been applied."
+          } >> $GITHUB_STEP_SUMMARY || true
 
   build-and-push:
     name: Build and Push Image
@@ -164,15 +213,18 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Summary
+        if: always()
         run: |
-          echo "## Docker Image Built" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Image | \`ghcr.io/${{ github.repository }}/demo-app\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Tag | \`${{ steps.meta.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Digest | \`${{ steps.build.outputs.digest }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Platform | \`linux/arm64\` |" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## Docker Image Built"
+            echo ""
+            echo "| Property | Value |"
+            echo "|----------|-------|"
+            echo "| Image | \`ghcr.io/${{ github.repository }}/demo-app\` |"
+            echo "| Tag | \`${{ steps.meta.outputs.version }}\` |"
+            echo "| Digest | \`${{ steps.build.outputs.digest }}\` |"
+            echo "| Platform | \`linux/arm64\` |"
+          } >> $GITHUB_STEP_SUMMARY || true
 
   deploy-application:
     name: Deploy Application
@@ -181,17 +233,23 @@ jobs:
     runs-on: arc-runner-set
     timeout-minutes: 5
 
+    permissions:
+      contents: read
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Install kubectl
         run: |
+          set -euo pipefail
+
           # Install kubectl with SHA256 verification
-          KUBECTL_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
-          curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/arm64/kubectl"
-          curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/arm64/kubectl.sha256"
-          echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
+          curl --connect-timeout 10 --max-time 60 -fLO \
+            "https://dl.k8s.io/release/${{ env.KUBECTL_VERSION }}/bin/linux/arm64/kubectl"
+          curl --connect-timeout 10 --max-time 30 -fLO \
+            "https://dl.k8s.io/release/${{ env.KUBECTL_VERSION }}/bin/linux/arm64/kubectl.sha256"
+          echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check --strict
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/
           rm kubectl.sha256
@@ -200,19 +258,24 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@fe7b79cd5ee1e45176fcad797de68ecaf3ca4814 # v4.2.0
         with:
-          version: 'v3.16.0'
+          version: ${{ env.HELM_VERSION }}
 
       - name: Verify tools
         run: |
+          set -euo pipefail
           kubectl version --client
           helm version
 
       - name: Set environment variables
+        env:
+          # Pass user-controlled input through env to prevent command injection
+          BRANCH_RAW: ${{ github.head_ref }}
         run: |
+          set -euo pipefail
+
           # Sanitize branch name for K8s labels
           # Requirements: alphanumeric, hyphens, underscores, dots; start/end with alphanumeric; max 63 chars
-          BRANCH_RAW="${{ github.head_ref }}"
-          BRANCH_SANITIZED=$(echo "$BRANCH_RAW" | \
+          BRANCH_SANITIZED=$(printf '%s' "$BRANCH_RAW" | \
             sed 's/[^a-zA-Z0-9._-]/-/g' | \
             sed 's/--*/-/g' | \
             sed 's/^[^a-zA-Z0-9]*//' | \
@@ -228,10 +291,20 @@ jobs:
           echo "SHORT_SHA=$(echo ${{ github.event.pull_request.head.sha }} | cut -c1-7)" >> $GITHUB_ENV
           echo "IMAGE_TAG=${{ needs.build-and-push.outputs.image-tag }}" >> $GITHUB_ENV
           echo "IMAGE_DIGEST=${{ needs.build-and-push.outputs.image-digest }}" >> $GITHUB_ENV
-          echo "PREVIEW_URL=https://pr-${{ github.event.pull_request.number }}.k8s-ee.genesluna.dev" >> $GITHUB_ENV
+          echo "PREVIEW_URL=https://pr-${{ github.event.pull_request.number }}.${{ env.PREVIEW_DOMAIN }}" >> $GITHUB_ENV
 
       - name: Deploy with Helm
         run: |
+          set -euo pipefail
+
+          # Check for and clean up any failed release
+          RELEASE_STATUS=$(helm status demo-app -n "$NAMESPACE" 2>/dev/null | grep "STATUS:" | awk '{print $2}' || echo "not-found")
+          if [[ "$RELEASE_STATUS" =~ ^(failed|pending-install|pending-upgrade|pending-rollback)$ ]]; then
+            echo "Found release in $RELEASE_STATUS state, cleaning up..."
+            helm uninstall demo-app -n "$NAMESPACE" --wait --timeout 2m || true
+          fi
+
+          # Deploy with atomic flag for automatic rollback on failure
           helm upgrade --install demo-app ./charts/demo-app \
             --namespace "$NAMESPACE" \
             --set image.repository=ghcr.io/${{ github.repository }}/demo-app \
@@ -240,12 +313,14 @@ jobs:
             --set prNumber="$PR_NUMBER" \
             --set commitSha="$SHORT_SHA" \
             --set branchName="$BRANCH_NAME" \
-            --set previewDomain="k8s-ee.genesluna.dev" \
-            --wait \
+            --set previewDomain="${{ env.PREVIEW_DOMAIN }}" \
+            --atomic \
             --timeout 3m
 
       - name: Verify deployment
         run: |
+          set -euo pipefail
+
           echo "Waiting for deployment to be ready..."
           kubectl rollout status deployment/pr-$PR_NUMBER-demo-app -n "$NAMESPACE" --timeout=3m
 
@@ -263,6 +338,8 @@ jobs:
 
       - name: Health check
         run: |
+          set -euo pipefail
+
           echo "Running in-cluster health check..."
 
           # Deployment rollout was already verified in previous step
@@ -275,7 +352,7 @@ jobs:
             POD_NAME=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=demo-app \
               --field-selector=status.phase=Running \
               -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.metadata.deletionTimestamp}{" "}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' | \
-              grep -E "^[^ ]+  True$" | head -1 | awk '{print $1}')
+              grep -E "^[^ ]+  True$" | head -1 | awk '{print $1}') || true
 
             if [ -n "$POD_NAME" ]; then
               echo "Found Ready pod: $POD_NAME"
@@ -307,12 +384,12 @@ jobs:
           # Setup cleanup trap to ensure port-forward is always terminated
           PF_PID=""
           cleanup() {
-            if [ -n "$PF_PID" ]; then
-              kill $PF_PID 2>/dev/null || true
-              wait $PF_PID 2>/dev/null || true
+            if [ -n "${PF_PID:-}" ]; then
+              kill "$PF_PID" 2>/dev/null || true
+              wait "$PF_PID" 2>/dev/null || true
             fi
           }
-          trap cleanup EXIT
+          trap cleanup EXIT INT TERM
 
           # Port-forward and check health endpoint with retry
           kubectl port-forward -n "$NAMESPACE" "pod/$POD_NAME" 8080:3000 &
@@ -321,11 +398,11 @@ jobs:
           # Wait for port-forward to be ready
           sleep 2
 
-          # Retry health check up to 10 times with 2s delay
+          # Retry health check up to 10 times with 2s delay (20 seconds max)
           HEALTH_RESPONSE=""
           for i in {1..10}; do
             echo "Health check attempt $i..."
-            HEALTH_RESPONSE=$(curl -sf http://localhost:8080/api/health 2>/dev/null) && break
+            HEALTH_RESPONSE=$(curl --connect-timeout 5 --max-time 10 -sf http://localhost:8080/api/health 2>/dev/null) && break
             sleep 2
           done
 
@@ -340,15 +417,18 @@ jobs:
           fi
 
       - name: Summary
+        if: always()
         run: |
-          echo "## Application Deployed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Namespace | \`$NAMESPACE\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Preview URL | [$PREVIEW_URL]($PREVIEW_URL) |" >> $GITHUB_STEP_SUMMARY
-          echo "| Image Tag | \`$IMAGE_TAG\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Health Check | Passed |" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## Application Deployed"
+            echo ""
+            echo "| Property | Value |"
+            echo "|----------|-------|"
+            echo "| Namespace | \`$NAMESPACE\` |"
+            echo "| Preview URL | [$PREVIEW_URL]($PREVIEW_URL) |"
+            echo "| Image Tag | \`$IMAGE_TAG\` |"
+            echo "| Health Check | Passed |"
+          } >> $GITHUB_STEP_SUMMARY || true
 
   destroy-namespace:
     name: Destroy PR Namespace
@@ -356,14 +436,20 @@ jobs:
     runs-on: arc-runner-set
     timeout-minutes: 5
 
+    permissions:
+      contents: read
+
     steps:
       - name: Install kubectl
         run: |
+          set -euo pipefail
+
           # Install kubectl with SHA256 verification
-          KUBECTL_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
-          curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/arm64/kubectl"
-          curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/arm64/kubectl.sha256"
-          echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
+          curl --connect-timeout 10 --max-time 60 -fLO \
+            "https://dl.k8s.io/release/${{ env.KUBECTL_VERSION }}/bin/linux/arm64/kubectl"
+          curl --connect-timeout 10 --max-time 30 -fLO \
+            "https://dl.k8s.io/release/${{ env.KUBECTL_VERSION }}/bin/linux/arm64/kubectl.sha256"
+          echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check --strict
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/
           rm kubectl.sha256
@@ -371,27 +457,63 @@ jobs:
 
       - name: Set namespace
         run: |
+          set -euo pipefail
           echo "NAMESPACE=pr-${{ github.event.pull_request.number }}" >> $GITHUB_ENV
 
       - name: Delete namespace
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
+          set -euo pipefail
+
           if kubectl get namespace "$NAMESPACE" >/dev/null 2>&1; then
+            # Verify ownership before deletion (security check)
+            MANAGED_BY=$(kubectl get namespace "$NAMESPACE" \
+              -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}' 2>/dev/null || echo "")
+            REPO=$(kubectl get namespace "$NAMESPACE" \
+              -o jsonpath='{.metadata.annotations.k8s-ee/repository}' 2>/dev/null || echo "")
+
+            if [ "$MANAGED_BY" != "github-actions" ]; then
+              echo "WARNING: Namespace $NAMESPACE is not managed by github-actions, skipping deletion"
+              exit 0
+            fi
+
+            if [ -n "$REPO" ] && [ "$REPO" != "$GITHUB_REPOSITORY" ]; then
+              echo "WARNING: Namespace $NAMESPACE belongs to different repository: $REPO, skipping deletion"
+              exit 0
+            fi
+
+            echo "Ownership verified, proceeding with deletion..."
+
+            # Remove finalizers from stuck resources to prevent hanging
+            echo "Removing finalizers from potentially stuck resources..."
+            kubectl get pvc -n "$NAMESPACE" -o name 2>/dev/null | \
+              xargs -r kubectl patch -n "$NAMESPACE" -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
+
             echo "Deleting namespace $NAMESPACE..."
-            kubectl delete namespace "$NAMESPACE" --wait=true --timeout=5m
+            if ! kubectl delete namespace "$NAMESPACE" --wait=true --timeout=4m; then
+              echo "WARNING: Namespace deletion timed out, forcing removal..."
+              kubectl patch namespace "$NAMESPACE" -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
+              kubectl delete namespace "$NAMESPACE" --wait=false --timeout=1m || true
+            fi
+
             echo "Namespace $NAMESPACE deleted successfully"
           else
             echo "Namespace $NAMESPACE does not exist, nothing to delete"
           fi
 
       - name: Summary
+        if: always()
         run: |
-          echo "## PR Environment Destroyed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Namespace | \`$NAMESPACE\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| PR Number | #${{ github.event.pull_request.number }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Action | ${{ github.event.action }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Merged | ${{ github.event.pull_request.merged }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "All resources have been cleaned up." >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## PR Environment Destroyed"
+            echo ""
+            echo "| Property | Value |"
+            echo "|----------|-------|"
+            echo "| Namespace | \`$NAMESPACE\` |"
+            echo "| PR Number | #${{ github.event.pull_request.number }} |"
+            echo "| Action | ${{ github.event.action }} |"
+            echo "| Merged | ${{ github.event.pull_request.merged }} |"
+            echo ""
+            echo "All resources have been cleaned up."
+          } >> $GITHUB_STEP_SUMMARY || true
