@@ -5,12 +5,17 @@ on:
     types: [opened, reopened, synchronize, closed]
 
 # Prevent concurrent runs for the same PR
+# Note: Concurrency group uses hardcoded project ID because env context is not available here
+# This must match the PROJECT_ID env var below
 concurrency:
-  group: pr-${{ github.event.pull_request.number }}
+  group: k8s-ee-pr-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
 # Workflow-level environment variables for consistency
+# PROJECT_ID: Unique identifier for this project in the cluster (required for multi-tenant clusters)
+# Must be lowercase, alphanumeric with hyphens, max 20 chars to leave room for PR number
 env:
+  PROJECT_ID: "k8s-ee"
   KUBECTL_VERSION: "v1.31.0"
   HELM_VERSION: "v3.16.0"
   PREVIEW_DOMAIN: "k8s-ee.genesluna.dev"
@@ -57,6 +62,13 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Validate PROJECT_ID format (lowercase alphanumeric with hyphens, 1-20 chars)
+          if ! [[ "${{ env.PROJECT_ID }}" =~ ^[a-z0-9]([a-z0-9-]{0,18}[a-z0-9])?$ ]]; then
+            echo "ERROR: PROJECT_ID must be lowercase alphanumeric with hyphens, 1-20 chars, start/end with alphanumeric"
+            echo "Current value: '${{ env.PROJECT_ID }}'"
+            exit 1
+          fi
+
           # Sanitize branch name for K8s labels
           # Requirements: alphanumeric, hyphens, underscores, dots; start/end with alphanumeric; max 63 chars
           BRANCH_SANITIZED=$(printf '%s' "$BRANCH_RAW" | \
@@ -68,11 +80,12 @@ jobs:
           # Fallback if result is empty
           BRANCH_SANITIZED="${BRANCH_SANITIZED:-unknown}"
 
+          echo "PROJECT_ID=${{ env.PROJECT_ID }}" >> $GITHUB_ENV
           echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
           echo "BRANCH_NAME=$BRANCH_SANITIZED" >> $GITHUB_ENV
           echo "COMMIT_SHA=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
           echo "CREATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
-          echo "NAMESPACE=pr-${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+          echo "NAMESPACE=${{ env.PROJECT_ID }}-pr-${{ github.event.pull_request.number }}" >> $GITHUB_ENV
 
       - name: Create namespace
         env:
@@ -284,14 +297,15 @@ jobs:
           # Fallback if result is empty
           BRANCH_SANITIZED="${BRANCH_SANITIZED:-unknown}"
 
+          echo "PROJECT_ID=${{ env.PROJECT_ID }}" >> $GITHUB_ENV
           echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
-          echo "NAMESPACE=pr-${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+          echo "NAMESPACE=${{ env.PROJECT_ID }}-pr-${{ github.event.pull_request.number }}" >> $GITHUB_ENV
           echo "BRANCH_NAME=$BRANCH_SANITIZED" >> $GITHUB_ENV
           echo "COMMIT_SHA=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
           echo "SHORT_SHA=$(echo ${{ github.event.pull_request.head.sha }} | cut -c1-7)" >> $GITHUB_ENV
           echo "IMAGE_TAG=${{ needs.build-and-push.outputs.image-tag }}" >> $GITHUB_ENV
           echo "IMAGE_DIGEST=${{ needs.build-and-push.outputs.image-digest }}" >> $GITHUB_ENV
-          echo "PREVIEW_URL=https://pr-${{ github.event.pull_request.number }}.${{ env.PREVIEW_DOMAIN }}" >> $GITHUB_ENV
+          echo "PREVIEW_URL=https://${{ env.PROJECT_ID }}-pr-${{ github.event.pull_request.number }}.${{ env.PREVIEW_DOMAIN }}" >> $GITHUB_ENV
 
       - name: Deploy with Helm
         run: |
@@ -307,6 +321,7 @@ jobs:
           # Deploy with atomic flag for automatic rollback on failure
           helm upgrade --install demo-app ./charts/demo-app \
             --namespace "$NAMESPACE" \
+            --set projectId="${{ env.PROJECT_ID }}" \
             --set image.repository=ghcr.io/${{ github.repository }}/demo-app \
             --set image.tag="$IMAGE_TAG" \
             --set image.digest="$IMAGE_DIGEST" \
@@ -322,7 +337,7 @@ jobs:
           set -euo pipefail
 
           echo "Waiting for deployment to be ready..."
-          kubectl rollout status deployment/pr-$PR_NUMBER-demo-app -n "$NAMESPACE" --timeout=3m
+          kubectl rollout status deployment/${{ env.PROJECT_ID }}-pr-$PR_NUMBER-demo-app -n "$NAMESPACE" --timeout=3m
 
           echo ""
           echo "=== Deployment Status ==="
@@ -458,7 +473,14 @@ jobs:
       - name: Set namespace
         run: |
           set -euo pipefail
-          echo "NAMESPACE=pr-${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+
+          # Validate PROJECT_ID format (must match create-namespace job validation)
+          if ! [[ "${{ env.PROJECT_ID }}" =~ ^[a-z0-9]([a-z0-9-]{0,18}[a-z0-9])?$ ]]; then
+            echo "ERROR: PROJECT_ID must be lowercase alphanumeric with hyphens, 1-20 chars"
+            exit 1
+          fi
+
+          echo "NAMESPACE=${{ env.PROJECT_ID }}-pr-${{ github.event.pull_request.number }}" >> $GITHUB_ENV
 
       - name: Delete namespace
         env:

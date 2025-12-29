@@ -13,6 +13,8 @@ imagePullSecrets: []
 # - name: ghcr-secret
 
 # PR-specific configuration (overridden by workflow)
+# projectId: Unique identifier for this project in multi-tenant clusters
+projectId: "k8s-ee"
 prNumber: ""
 commitSha: ""
 branchName: ""
