@@ -98,6 +98,183 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "ResourceQuota and LimitRange have been applied." >> $GITHUB_STEP_SUMMARY
 
+  build-and-push:
+    name: Build and Push Image
+    if: github.event.action != 'closed'
+    needs: create-namespace
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      image-tag: ${{ steps.meta.outputs.version }}
+      image-digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@49b3bc8e6bdd4a60e6116a5414239cba5943d3cf # v3.2.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@8e5442c4ef9f78752691e2d8f8d19755c6f78e81 # v5.5.1
+        with:
+          images: ghcr.io/${{ github.repository }}/demo-app
+          tags: |
+            type=sha,prefix=,format=short
+            type=raw,value=pr-${{ github.event.pull_request.number }}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
+        with:
+          context: ./demo-app
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          echo "## Docker Image Built" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | \`ghcr.io/${{ github.repository }}/demo-app\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tag | \`${{ steps.meta.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Digest | \`${{ steps.build.outputs.digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | \`linux/arm64\` |" >> $GITHUB_STEP_SUMMARY
+
+  deploy-application:
+    name: Deploy Application
+    if: github.event.action != 'closed'
+    needs: [create-namespace, build-and-push]
+    runs-on: arc-runner-set
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/arm64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+          kubectl version --client
+
+      - name: Install Helm
+        uses: azure/setup-helm@fe7b79cd5ee1e45176fcad797de68ecaf3ca4814 # v4.2.0
+        with:
+          version: 'v3.16.0'
+
+      - name: Verify tools
+        run: |
+          kubectl version --client
+          helm version
+
+      - name: Set environment variables
+        run: |
+          BRANCH_RAW="${{ github.head_ref }}"
+          BRANCH_SANITIZED=$(echo "$BRANCH_RAW" | sed 's/[^a-zA-Z0-9._-]/-/g' | cut -c1-63)
+
+          echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+          echo "NAMESPACE=pr-${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+          echo "BRANCH_NAME=$BRANCH_SANITIZED" >> $GITHUB_ENV
+          echo "COMMIT_SHA=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+          echo "SHORT_SHA=$(echo ${{ github.event.pull_request.head.sha }} | cut -c1-7)" >> $GITHUB_ENV
+          echo "IMAGE_TAG=${{ needs.build-and-push.outputs.image-tag }}" >> $GITHUB_ENV
+          echo "PREVIEW_URL=https://pr-${{ github.event.pull_request.number }}.k8s-ee.genesluna.dev" >> $GITHUB_ENV
+
+      - name: Deploy with Helm
+        run: |
+          helm upgrade --install demo-app ./charts/demo-app \
+            --namespace "$NAMESPACE" \
+            --set image.repository=ghcr.io/${{ github.repository }}/demo-app \
+            --set image.tag="$IMAGE_TAG" \
+            --set prNumber="$PR_NUMBER" \
+            --set commitSha="$SHORT_SHA" \
+            --set branchName="$BRANCH_NAME" \
+            --set previewDomain="k8s-ee.genesluna.dev" \
+            --wait \
+            --timeout 3m
+
+      - name: Verify deployment
+        run: |
+          echo "Waiting for deployment to be ready..."
+          kubectl rollout status deployment/pr-$PR_NUMBER-demo-app -n "$NAMESPACE" --timeout=3m
+
+          echo ""
+          echo "=== Deployment Status ==="
+          kubectl get deployment -n "$NAMESPACE"
+
+          echo ""
+          echo "=== Pods ==="
+          kubectl get pods -n "$NAMESPACE"
+
+          echo ""
+          echo "=== Ingress ==="
+          kubectl get ingress -n "$NAMESPACE"
+
+      - name: Health check
+        run: |
+          echo "Waiting for pod to be ready..."
+          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=demo-app -n "$NAMESPACE" --timeout=2m
+
+          echo "Running in-cluster health check..."
+          POD_NAME=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=demo-app -o jsonpath='{.items[0].metadata.name}')
+
+          # Port-forward and check health endpoint with retry
+          kubectl port-forward -n "$NAMESPACE" "pod/$POD_NAME" 8080:3000 &
+          PF_PID=$!
+
+          # Retry health check up to 10 times with 2s delay
+          HEALTH_RESPONSE=""
+          for i in {1..10}; do
+            echo "Health check attempt $i..."
+            HEALTH_RESPONSE=$(curl -sf http://localhost:8080/api/health 2>/dev/null) && break
+            sleep 2
+          done
+
+          kill $PF_PID 2>/dev/null || true
+
+          echo "Health check response: $HEALTH_RESPONSE"
+
+          if echo "$HEALTH_RESPONSE" | grep -q '"status":"ok"'; then
+            echo "Health check PASSED"
+          else
+            echo "Health check FAILED"
+            exit 1
+          fi
+
+      - name: Summary
+        run: |
+          echo "## Application Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Namespace | \`$NAMESPACE\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Preview URL | [$PREVIEW_URL]($PREVIEW_URL) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image Tag | \`$IMAGE_TAG\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Health Check | Passed |" >> $GITHUB_STEP_SUMMARY
+
   destroy-namespace:
     name: Destroy PR Namespace
     if: github.event.action == 'closed'

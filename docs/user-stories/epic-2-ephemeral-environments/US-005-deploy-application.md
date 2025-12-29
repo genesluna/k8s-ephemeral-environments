@@ -1,5 +1,7 @@
 # US-005: Deploy Application to PR Environment
 
+**Status:** Done
+
 ## User Story
 
 **As a** developer,
@@ -8,12 +10,12 @@
 
 ## Acceptance Criteria
 
-- [ ] Application image built with commit SHA tag
-- [ ] Application deployed to PR namespace
-- [ ] ConfigMaps and Secrets created for the environment
-- [ ] Service created to expose the application
-- [ ] Health checks pass before marking deploy complete
-- [ ] Total deploy time < 10 minutes (including build)
+- [x] Application image built with commit SHA tag
+- [x] Application deployed to PR namespace
+- [x] ConfigMaps and Secrets created for the environment
+- [x] Service created to expose the application
+- [x] Health checks pass before marking deploy complete
+- [x] Total deploy time < 10 minutes (including build)
 
 ## Priority
 
