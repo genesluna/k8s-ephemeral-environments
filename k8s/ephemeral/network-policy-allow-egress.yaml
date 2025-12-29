@@ -25,13 +25,14 @@ spec:
         - protocol: TCP
           port: 53
     # Allow access to Kubernetes API server (required for CNPG job status reporting)
-    # k3s API server is at 10.43.0.1 (kubernetes.default.svc)
+    # k3s API server runs on host network at 10.0.0.39:6443
+    # Note: Service IP (10.43.0.1) doesn't work due to DNAT evaluation order
     - to:
         - ipBlock:
-            cidr: 10.43.0.1/32
+            cidr: 10.0.0.39/32
       ports:
         - protocol: TCP
-          port: 443
+          port: 6443
     # Allow all external (non-cluster) traffic
     # This permits: external APIs, container registries, internet access
     # Note: k3s uses 10.42.0.0/16 for pods and 10.43.0.0/16 for services
