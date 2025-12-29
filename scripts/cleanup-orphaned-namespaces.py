@@ -1,0 +1,352 @@
+#!/usr/bin/env python3
+"""
+Cleanup script for orphaned PR namespaces.
+
+This script identifies and removes Kubernetes namespaces for closed PRs.
+It's designed to run as a CronJob in the platform namespace.
+
+Features:
+- Lists namespaces with k8s-ee/type=ephemeral label
+- Queries GitHub API to check PR status
+- Deletes namespaces for closed PRs older than configured threshold
+- Respects preserve=true label for US-021 compatibility
+- Comprehensive logging and metrics
+
+Environment Variables:
+    GITHUB_TOKEN: GitHub PAT with repo scope (required)
+    CLEANUP_AGE_HOURS: Minimum age in hours before deletion (default: 24)
+    DRY_RUN: Set to "true" for dry-run mode (default: false)
+"""
+
+import json
+import logging
+import os
+import subprocess
+import sys
+from datetime import datetime, timezone
+from typing import Dict, List, Optional, Tuple
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
+
+# Configure logging first (needed for config parsing warnings)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+logger = logging.getLogger(__name__)
+
+# Configuration from environment
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+try:
+    CLEANUP_AGE_HOURS = int(os.environ.get("CLEANUP_AGE_HOURS", "24"))
+except ValueError:
+    logger.warning("Invalid CLEANUP_AGE_HOURS value, using default: 24")
+    CLEANUP_AGE_HOURS = 24
+DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
+KUBECTL_TIMEOUT = 60
+
+# Labels and annotations used by the platform
+LABEL_EPHEMERAL = "k8s-ee/type=ephemeral"
+LABEL_MANAGED_BY = "app.kubernetes.io/managed-by"
+LABEL_PR_NUMBER = "k8s-ee/pr-number"
+LABEL_PROJECT_ID = "k8s-ee/project-id"
+LABEL_PRESERVE = "preserve"
+ANNOTATION_REPOSITORY = "k8s-ee/repository"
+ANNOTATION_CREATED_AT = "k8s-ee/created-at"
+
+# Metrics for monitoring
+metrics = {
+    "namespaces_checked": 0,
+    "namespaces_orphaned": 0,
+    "namespaces_deleted": 0,
+    "namespaces_skipped_preserve": 0,
+    "namespaces_skipped_age": 0,
+    "namespaces_skipped_open": 0,
+    "namespaces_skipped_safety": 0,
+    "namespaces_failed": 0,
+    "github_api_errors": 0,
+}
+
+
+def run_kubectl(args: List[str], timeout: int = KUBECTL_TIMEOUT) -> Tuple[bool, str]:
+    """Execute kubectl command and return success status and output."""
+    try:
+        result = subprocess.run(
+            ["kubectl"] + args,
+            capture_output=True,
+            text=True,
+            timeout=timeout
+        )
+        if result.returncode == 0:
+            return True, result.stdout.strip()
+        return False, result.stderr.strip()
+    except subprocess.TimeoutExpired:
+        return False, "Command timed out"
+    except FileNotFoundError:
+        return False, "kubectl not found"
+    except Exception as e:
+        return False, str(e)
+
+
+def get_ephemeral_namespaces() -> List[Dict]:
+    """Get all namespaces with k8s-ee/type=ephemeral label."""
+    success, output = run_kubectl([
+        "get", "namespaces",
+        "-l", LABEL_EPHEMERAL,
+        "-o", "json"
+    ])
+
+    if not success:
+        logger.error(f"Failed to list namespaces: {output}")
+        return []
+
+    try:
+        data = json.loads(output)
+        return data.get("items", [])
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse namespace JSON: {e}")
+        return []
+
+
+def check_pr_status(owner: str, repo: str, pr_number: int) -> Optional[str]:
+    """
+    Query GitHub API for PR status.
+    Returns: 'open', 'closed', 'merged', or None on error.
+    """
+    if not GITHUB_TOKEN:
+        logger.error("GITHUB_TOKEN not set")
+        return None
+
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+    headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "k8s-ee-cleanup-job"
+    }
+
+    try:
+        request = Request(url, headers=headers)
+        with urlopen(request, timeout=30) as response:
+            data = json.loads(response.read().decode())
+            state = data.get("state", "unknown")
+            merged = data.get("merged", False)
+
+            if state == "closed" and merged:
+                return "merged"
+            return state
+    except HTTPError as e:
+        if e.code == 404:
+            # PR not found - treat as closed (PR may have been deleted)
+            logger.warning(f"PR {owner}/{repo}#{pr_number} not found (404), treating as closed")
+            return "closed"
+        logger.error(f"GitHub API error for {owner}/{repo}#{pr_number}: {e.code}")
+        metrics["github_api_errors"] += 1
+        return None
+    except URLError as e:
+        logger.error(f"Network error checking PR status: {e}")
+        metrics["github_api_errors"] += 1
+        return None
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse GitHub API response: {e}")
+        metrics["github_api_errors"] += 1
+        return None
+
+
+def parse_namespace_metadata(namespace: Dict) -> Dict:
+    """Extract relevant metadata from namespace object."""
+    metadata = namespace.get("metadata", {})
+    labels = metadata.get("labels", {})
+    annotations = metadata.get("annotations", {})
+
+    return {
+        "name": metadata.get("name", ""),
+        "pr_number": labels.get(LABEL_PR_NUMBER, ""),
+        "project_id": labels.get(LABEL_PROJECT_ID, ""),
+        "managed_by": labels.get(LABEL_MANAGED_BY, ""),
+        "preserve": labels.get(LABEL_PRESERVE, "false").lower() == "true",
+        "repository": annotations.get(ANNOTATION_REPOSITORY, ""),
+        "created_at": annotations.get(ANNOTATION_CREATED_AT, ""),
+    }
+
+
+def get_namespace_age_hours(created_at: str) -> Optional[float]:
+    """Calculate namespace age in hours from ISO 8601 timestamp."""
+    if not created_at:
+        return None
+    try:
+        # Handle both formats: with 'Z' suffix and with timezone offset
+        if created_at.endswith("Z"):
+            created_at = created_at[:-1] + "+00:00"
+        created = datetime.fromisoformat(created_at)
+        now = datetime.now(timezone.utc)
+        delta = now - created
+        return delta.total_seconds() / 3600
+    except ValueError as e:
+        logger.warning(f"Failed to parse timestamp '{created_at}': {e}")
+        return None
+
+
+def delete_namespace(name: str) -> bool:
+    """Delete a namespace with finalizer cleanup."""
+    logger.info(f"Deleting namespace: {name}")
+
+    if DRY_RUN:
+        logger.info(f"[DRY-RUN] Would delete namespace: {name}")
+        return True
+
+    # Remove PVC finalizers to prevent hanging
+    success, pvcs = run_kubectl(["get", "pvc", "-n", name, "-o", "name"])
+    if success and pvcs:
+        for pvc in pvcs.strip().split("\n"):
+            if pvc:
+                logger.info(f"Removing finalizers from {pvc}")
+                run_kubectl([
+                    "patch", "-n", name, pvc,
+                    "-p", '{"metadata":{"finalizers":null}}',
+                    "--type=merge"
+                ])
+
+    # Delete namespace with timeout
+    success, output = run_kubectl([
+        "delete", "namespace", name,
+        "--wait=true", "--timeout=4m"
+    ], timeout=300)
+
+    if not success:
+        logger.warning(f"Namespace deletion timed out, forcing: {name}")
+        # Force removal by removing finalizers from namespace
+        run_kubectl([
+            "patch", "namespace", name,
+            "-p", '{"metadata":{"finalizers":null}}',
+            "--type=merge"
+        ])
+        success, _ = run_kubectl([
+            "delete", "namespace", name,
+            "--wait=false", "--timeout=1m"
+        ])
+
+    return success
+
+
+def process_namespace(ns_meta: Dict) -> str:
+    """
+    Process a single namespace for cleanup.
+    Returns: 'deleted', 'skipped_preserve', 'skipped_age', 'skipped_open',
+             'skipped_safety', 'failed', 'error'
+    """
+    name = ns_meta["name"]
+
+    # Safety check: must be managed by github-actions
+    if ns_meta["managed_by"] != "github-actions":
+        logger.warning(f"Skipping {name}: not managed by github-actions (got: {ns_meta['managed_by']})")
+        return "skipped_safety"
+
+    # Check preserve label (US-021 compatibility)
+    if ns_meta["preserve"]:
+        logger.info(f"Skipping {name}: preserve=true label set")
+        return "skipped_preserve"
+
+    # Check age threshold
+    age_hours = get_namespace_age_hours(ns_meta["created_at"])
+    if age_hours is not None and age_hours < CLEANUP_AGE_HOURS:
+        logger.info(f"Skipping {name}: age {age_hours:.1f}h < {CLEANUP_AGE_HOURS}h threshold")
+        return "skipped_age"
+
+    # Parse repository owner/repo
+    repository = ns_meta["repository"]
+    if not repository or "/" not in repository:
+        logger.warning(f"Skipping {name}: invalid repository format '{repository}'")
+        return "skipped_safety"
+
+    owner, repo = repository.split("/", 1)
+    pr_number = ns_meta["pr_number"]
+
+    if not pr_number or not pr_number.isdigit():
+        logger.warning(f"Skipping {name}: invalid PR number '{pr_number}'")
+        return "skipped_safety"
+
+    # Check PR status via GitHub API
+    status = check_pr_status(owner, repo, int(pr_number))
+
+    if status is None:
+        logger.warning(f"Skipping {name}: could not determine PR status")
+        return "error"
+
+    if status == "open":
+        logger.debug(f"Skipping {name}: PR is still open")
+        return "skipped_open"
+
+    # PR is closed or merged - delete namespace
+    age_str = f"{age_hours:.1f}h" if age_hours else "unknown"
+    logger.info(f"Namespace {name} is orphaned (PR {status}, age: {age_str}), deleting...")
+
+    if delete_namespace(name):
+        logger.info(f"Successfully deleted namespace: {name}")
+        return "deleted"
+    else:
+        logger.error(f"Failed to delete namespace: {name}")
+        return "failed"
+
+
+def main() -> int:
+    """Main entry point. Returns exit code."""
+    logger.info("=" * 60)
+    logger.info("Starting orphaned namespace cleanup")
+    logger.info(f"Dry-run mode: {DRY_RUN}")
+    logger.info(f"Age threshold: {CLEANUP_AGE_HOURS} hours")
+    logger.info("=" * 60)
+
+    if not GITHUB_TOKEN:
+        logger.error("GITHUB_TOKEN environment variable is required")
+        return 1
+
+    # Get all ephemeral namespaces
+    namespaces = get_ephemeral_namespaces()
+    logger.info(f"Found {len(namespaces)} ephemeral namespace(s)")
+    metrics["namespaces_checked"] = len(namespaces)
+
+    for ns in namespaces:
+        ns_meta = parse_namespace_metadata(ns)
+        result = process_namespace(ns_meta)
+
+        if result == "deleted":
+            metrics["namespaces_deleted"] += 1
+            metrics["namespaces_orphaned"] += 1
+        elif result == "skipped_preserve":
+            metrics["namespaces_skipped_preserve"] += 1
+        elif result == "skipped_age":
+            metrics["namespaces_skipped_age"] += 1
+        elif result == "skipped_open":
+            metrics["namespaces_skipped_open"] += 1
+        elif result == "skipped_safety":
+            metrics["namespaces_skipped_safety"] += 1
+        elif result == "failed":
+            metrics["namespaces_failed"] += 1
+            metrics["namespaces_orphaned"] += 1
+
+    # Log summary
+    logger.info("=" * 60)
+    logger.info("Cleanup Summary:")
+    logger.info(f"  Namespaces checked: {metrics['namespaces_checked']}")
+    logger.info(f"  Orphaned found: {metrics['namespaces_orphaned']}")
+    logger.info(f"  Successfully deleted: {metrics['namespaces_deleted']}")
+    logger.info(f"  Skipped (preserve): {metrics['namespaces_skipped_preserve']}")
+    logger.info(f"  Skipped (too young): {metrics['namespaces_skipped_age']}")
+    logger.info(f"  Skipped (PR open): {metrics['namespaces_skipped_open']}")
+    logger.info(f"  Skipped (safety): {metrics['namespaces_skipped_safety']}")
+    logger.info(f"  Failed deletions: {metrics['namespaces_failed']}")
+    logger.info(f"  GitHub API errors: {metrics['github_api_errors']}")
+    logger.info("=" * 60)
+
+    # Exit with error if any deletions failed
+    if metrics["namespaces_failed"] > 0:
+        logger.error("Some namespace deletions failed")
+        return 1
+
+    logger.info("Cleanup completed successfully")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,74 @@
+# PrometheusRule alerts for cleanup job monitoring
+# US-020: Implement Cleanup Job for Orphaned Resources
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cleanup-job-alerts
+  namespace: observability
+  labels:
+    release: prometheus
+    app: kube-prometheus-stack
+spec:
+  groups:
+    - name: cleanup-job.rules
+      rules:
+        # =====================================================================
+        # Cleanup Job Failure Alerts
+        # =====================================================================
+        - alert: CleanupJobFailed
+          expr: |
+            kube_job_status_failed{namespace="platform", job_name=~"cleanup-orphaned-namespaces.*"} > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Cleanup job failed"
+            description: "The cleanup-orphaned-namespaces CronJob has failed. Orphaned namespaces may accumulate."
+            runbook_url: "https://github.com/genesluna/k8s-ephemeral-environments/blob/main/docs/runbooks/cleanup-job.md#cleanupjobfailed"
+
+        - alert: CleanupJobConsecutiveFailures
+          expr: |
+            increase(kube_job_status_failed{namespace="platform", job_name=~"cleanup-orphaned-namespaces.*"}[24h]) >= 2
+          for: 0m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Cleanup job failed multiple times"
+            description: "The cleanup-orphaned-namespaces CronJob has failed 2+ times in 24 hours. Immediate attention required."
+            runbook_url: "https://github.com/genesluna/k8s-ephemeral-environments/blob/main/docs/runbooks/cleanup-job.md#cleanupjobconsecutivefailures"
+
+        - alert: CleanupJobNotRunning
+          expr: |
+            time() - kube_cronjob_status_last_schedule_time{namespace="platform", cronjob="cleanup-orphaned-namespaces"} > 28800
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Cleanup job not running"
+            description: "The cleanup-orphaned-namespaces CronJob has not run in over 8 hours (expected every 6 hours)."
+            runbook_url: "https://github.com/genesluna/k8s-ephemeral-environments/blob/main/docs/runbooks/cleanup-job.md#cleanupjobnotrunning"
+
+        # =====================================================================
+        # Orphaned Namespace Alerts
+        # =====================================================================
+        - alert: TooManyEphemeralNamespaces
+          expr: |
+            count(kube_namespace_labels{label_k8s_ee_type="ephemeral"}) > 10
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Many ephemeral namespaces detected"
+            description: "There are {{ $value }} ephemeral namespaces in the cluster. This may indicate cleanup issues."
+            runbook_url: "https://github.com/genesluna/k8s-ephemeral-environments/blob/main/docs/runbooks/cleanup-job.md#toomanyephemeralnamespaces"
+
+        - alert: OldEphemeralNamespace
+          expr: |
+            (time() - kube_namespace_created{namespace=~".*-pr-.*"}) / 3600 > 72
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Namespace older than 72 hours"
+            description: "Namespace {{ $labels.namespace }} is over 72 hours old. It may be orphaned or have preserve=true set."
+            runbook_url: "https://github.com/genesluna/k8s-ephemeral-environments/blob/main/docs/runbooks/cleanup-job.md#oldephemeralnamespace"

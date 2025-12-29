@@ -1,0 +1,10 @@
+# Platform namespace for shared infrastructure components
+# This namespace hosts cleanup jobs and other platform-level services
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform
+  labels:
+    app.kubernetes.io/name: platform
+    app.kubernetes.io/managed-by: manual
+    k8s-ee/type: permanent

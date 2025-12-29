@@ -1,0 +1,50 @@
+# RBAC configuration for the cleanup CronJob
+# Grants minimal permissions to list namespaces and delete orphaned ones
+#
+# US-020: Implement Cleanup Job for Orphaned Resources
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cleanup-job-sa
+  namespace: platform
+  labels:
+    app.kubernetes.io/name: cleanup-job
+    app.kubernetes.io/component: rbac
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cleanup-job-role
+  labels:
+    app.kubernetes.io/name: cleanup-job
+    app.kubernetes.io/component: rbac
+rules:
+  # List all namespaces to find ephemeral ones
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "delete", "patch"]
+  # Clean up PVCs to prevent stuck deletions
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "patch"]
+  # Read pods for cleanup verification
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cleanup-job-binding
+  labels:
+    app.kubernetes.io/name: cleanup-job
+    app.kubernetes.io/component: rbac
+subjects:
+  - kind: ServiceAccount
+    name: cleanup-job-sa
+    namespace: platform
+roleRef:
+  kind: ClusterRole
+  name: cleanup-job-role
+  apiGroup: rbac.authorization.k8s.io
