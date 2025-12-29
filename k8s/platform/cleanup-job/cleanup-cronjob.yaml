@@ -1,0 +1,134 @@
+# CronJob for cleaning up orphaned PR namespaces
+# Runs every 6 hours to identify and remove namespaces for closed PRs
+#
+# US-020: Implement Cleanup Job for Orphaned Resources
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cleanup-orphaned-namespaces
+  namespace: platform
+  labels:
+    app.kubernetes.io/name: cleanup-job
+    app.kubernetes.io/component: cronjob
+spec:
+  # Run every 6 hours: at 00:00, 06:00, 12:00, 18:00 UTC
+  schedule: "0 */6 * * *"
+
+  # Concurrency policy: don't run if previous job is still running
+  concurrencyPolicy: Forbid
+
+  # Keep history for debugging
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+
+  # Don't start if missed by more than 2 hours
+  startingDeadlineSeconds: 7200
+
+  jobTemplate:
+    spec:
+      # Job timeout: 30 minutes max
+      activeDeadlineSeconds: 1800
+
+      # Don't retry on failure - next scheduled run will handle it
+      backoffLimit: 1
+
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: cleanup-job
+            app.kubernetes.io/component: job
+        spec:
+          serviceAccountName: cleanup-job-sa
+          restartPolicy: Never
+
+          # Security context
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+
+          initContainers:
+            # Install kubectl into shared volume
+            - name: install-kubectl
+              image: bitnami/kubectl:1.31
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/sh
+                - -c
+                - cp /opt/bitnami/kubectl/bin/kubectl /shared/kubectl
+              volumeMounts:
+                - name: shared
+                  mountPath: /shared
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: false
+                capabilities:
+                  drop:
+                    - ALL
+
+          containers:
+            - name: cleanup
+              # ARM64-compatible Python image
+              image: python:3.12-alpine
+              imagePullPolicy: IfNotPresent
+
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  export PATH="/shared:$PATH"
+                  python3 /scripts/cleanup-orphaned-namespaces.py
+
+              env:
+                # GitHub token from secret
+                - name: GITHUB_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: github-cleanup-token
+                      key: GITHUB_TOKEN
+
+                # Configuration
+                - name: CLEANUP_AGE_HOURS
+                  value: "24"
+
+                # Set to "true" for testing without actual deletion
+                - name: DRY_RUN
+                  value: "false"
+
+              volumeMounts:
+                - name: script
+                  mountPath: /scripts
+                  readOnly: true
+                - name: shared
+                  mountPath: /shared
+                  readOnly: true
+
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  cpu: 200m
+                  memory: 256Mi
+
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+
+          volumes:
+            - name: script
+              configMap:
+                name: cleanup-script
+                defaultMode: 0555
+            - name: shared
+              emptyDir: {}
+
+          # Tolerate ARM64 nodes
+          tolerations:
+            - key: "kubernetes.io/arch"
+              operator: "Equal"
+              value: "arm64"
+              effect: "NoSchedule"
