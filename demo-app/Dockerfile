@@ -1,4 +1,4 @@
-# Stage 1: Install dependencies
+# Stage 1: Install ALL dependencies (for building)
 FROM node:22-alpine AS deps
 
 RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
@@ -10,8 +10,23 @@ COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 
-# Install all dependencies
+# Install all dependencies (including devDependencies for building)
 RUN pnpm install --frozen-lockfile
+
+# Stage 1b: Production dependencies only
+FROM node:22-alpine AS prod-deps
+
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
+
+WORKDIR /app
+
+# Copy workspace config
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
+COPY apps/api/package.json apps/api/
+COPY apps/web/package.json apps/web/
+
+# Install production dependencies only (no devDependencies)
+RUN pnpm install --frozen-lockfile --prod
 
 # Stage 2: Build the applications
 FROM node:22-alpine AS builder
@@ -55,10 +70,10 @@ WORKDIR /app
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nestjs
 
-# Copy node_modules from deps stage (contains all deps including production)
+# Copy production-only node_modules from prod-deps stage
 # pnpm hoists common deps to root, so we need both locations
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
+COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=prod-deps /app/apps/api/node_modules ./apps/api/node_modules
 
 # Copy built application (includes public folder with web assets)
 COPY --from=builder /app/apps/api/dist ./apps/api/dist

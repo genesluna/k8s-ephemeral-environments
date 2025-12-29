@@ -2,6 +2,9 @@
 image:
   repository: ghcr.io/genesluna/k8s-ephemeral-environments/demo-app
   tag: latest
+  # Digest for immutable image reference (preferred over tag for security)
+  # When set, takes precedence over tag
+  digest: ""
   # Always pull for mutable tags (pr-X) to ensure latest image
   pullPolicy: Always
 

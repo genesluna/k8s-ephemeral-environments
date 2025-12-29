@@ -50,11 +50,20 @@
 - **Location:** `charts/demo-app/`
 - **Templates:** deployment, service, configmap, ingress, NOTES.txt
 - **Security:** non-root user, read-only filesystem, dropped capabilities
+- **Image pinning:** Supports digest-based references for immutable deployments
 
 ### Workflow Jobs
 - `build-and-push` - Builds Docker image and pushes to GHCR
-- `deploy-application` - Deploys via Helm with health check
+- `deploy-application` - Deploys via Helm with health check and image digest
 
 ### Preview URL
 - Pattern: `https://pr-{number}.k8s-ee.genesluna.dev`
 - SSL: Let's Encrypt production certificates via Traefik DNS-01 challenge
+
+### Security Hardening
+- **Dockerfile:** Multi-stage build with production-only dependencies (no devDependencies)
+- **RBAC:** Minimal permissions (no pods/exec)
+- **kubectl:** SHA256 verification on download
+- **NestJS:** Graceful shutdown hooks, bootstrap error handling
+- **Helmet:** CSP configured for SPA compatibility
+- **TypeScript:** Strict mode enabled

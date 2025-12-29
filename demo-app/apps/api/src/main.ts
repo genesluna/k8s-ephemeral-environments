@@ -5,8 +5,20 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Security headers
-  app.use(helmet());
+  // Security headers with CSP configured for SPA
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          scriptSrc: ["'self'"],
+          imgSrc: ["'self'", 'data:'],
+          connectSrc: ["'self'"],
+        },
+      },
+    }),
+  );
 
   // CORS configuration
   app.enableCors({
@@ -14,6 +26,9 @@ async function bootstrap() {
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     credentials: true,
   });
+
+  // Enable graceful shutdown hooks
+  app.enableShutdownHooks();
 
   app.setGlobalPrefix('api', {
     exclude: ['/'],
@@ -25,4 +40,7 @@ async function bootstrap() {
   console.log(`Application is running on port ${port}`);
 }
 
-bootstrap();
+bootstrap().catch((err) => {
+  console.error('Failed to bootstrap application:', err);
+  process.exit(1);
+});

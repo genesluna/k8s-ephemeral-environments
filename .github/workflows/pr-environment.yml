@@ -22,10 +22,14 @@ jobs:
 
       - name: Install kubectl and tools
         run: |
-          # Install kubectl
-          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/arm64/kubectl"
+          # Install kubectl with SHA256 verification
+          KUBECTL_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
+          curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/arm64/kubectl"
+          curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/arm64/kubectl.sha256"
+          echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/
+          rm kubectl.sha256
 
           # Install gettext for envsubst
           sudo apt-get update && sudo apt-get install -y gettext-base
@@ -36,9 +40,17 @@ jobs:
 
       - name: Set environment variables
         run: |
-          # Sanitize branch name for K8s labels (replace / with -, truncate to 63 chars)
+          # Sanitize branch name for K8s labels
+          # Requirements: alphanumeric, hyphens, underscores, dots; start/end with alphanumeric; max 63 chars
           BRANCH_RAW="${{ github.head_ref }}"
-          BRANCH_SANITIZED=$(echo "$BRANCH_RAW" | sed 's/[^a-zA-Z0-9._-]/-/g' | cut -c1-63)
+          BRANCH_SANITIZED=$(echo "$BRANCH_RAW" | \
+            sed 's/[^a-zA-Z0-9._-]/-/g' | \
+            sed 's/--*/-/g' | \
+            sed 's/^[^a-zA-Z0-9]*//' | \
+            cut -c1-63 | \
+            sed 's/[^a-zA-Z0-9]*$//')
+          # Fallback if result is empty
+          BRANCH_SANITIZED="${BRANCH_SANITIZED:-unknown}"
 
           echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
           echo "BRANCH_NAME=$BRANCH_SANITIZED" >> $GITHUB_ENV
@@ -175,9 +187,14 @@ jobs:
 
       - name: Install kubectl
         run: |
-          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/arm64/kubectl"
+          # Install kubectl with SHA256 verification
+          KUBECTL_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
+          curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/arm64/kubectl"
+          curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/arm64/kubectl.sha256"
+          echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/
+          rm kubectl.sha256
           kubectl version --client
 
       - name: Install Helm
@@ -192,8 +209,17 @@ jobs:
 
       - name: Set environment variables
         run: |
+          # Sanitize branch name for K8s labels
+          # Requirements: alphanumeric, hyphens, underscores, dots; start/end with alphanumeric; max 63 chars
           BRANCH_RAW="${{ github.head_ref }}"
-          BRANCH_SANITIZED=$(echo "$BRANCH_RAW" | sed 's/[^a-zA-Z0-9._-]/-/g' | cut -c1-63)
+          BRANCH_SANITIZED=$(echo "$BRANCH_RAW" | \
+            sed 's/[^a-zA-Z0-9._-]/-/g' | \
+            sed 's/--*/-/g' | \
+            sed 's/^[^a-zA-Z0-9]*//' | \
+            cut -c1-63 | \
+            sed 's/[^a-zA-Z0-9]*$//')
+          # Fallback if result is empty
+          BRANCH_SANITIZED="${BRANCH_SANITIZED:-unknown}"
 
           echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
           echo "NAMESPACE=pr-${{ github.event.pull_request.number }}" >> $GITHUB_ENV
@@ -201,6 +227,7 @@ jobs:
           echo "COMMIT_SHA=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
           echo "SHORT_SHA=$(echo ${{ github.event.pull_request.head.sha }} | cut -c1-7)" >> $GITHUB_ENV
           echo "IMAGE_TAG=${{ needs.build-and-push.outputs.image-tag }}" >> $GITHUB_ENV
+          echo "IMAGE_DIGEST=${{ needs.build-and-push.outputs.image-digest }}" >> $GITHUB_ENV
           echo "PREVIEW_URL=https://pr-${{ github.event.pull_request.number }}.k8s-ee.genesluna.dev" >> $GITHUB_ENV
 
       - name: Deploy with Helm
@@ -209,6 +236,7 @@ jobs:
             --namespace "$NAMESPACE" \
             --set image.repository=ghcr.io/${{ github.repository }}/demo-app \
             --set image.tag="$IMAGE_TAG" \
+            --set image.digest="$IMAGE_DIGEST" \
             --set prNumber="$PR_NUMBER" \
             --set commitSha="$SHORT_SHA" \
             --set branchName="$BRANCH_NAME" \
@@ -243,6 +271,16 @@ jobs:
 
           echo "Checking pod: $POD_NAME"
 
+          # Setup cleanup trap to ensure port-forward is always terminated
+          PF_PID=""
+          cleanup() {
+            if [ -n "$PF_PID" ]; then
+              kill $PF_PID 2>/dev/null || true
+              wait $PF_PID 2>/dev/null || true
+            fi
+          }
+          trap cleanup EXIT
+
           # Port-forward and check health endpoint with retry
           kubectl port-forward -n "$NAMESPACE" "pod/$POD_NAME" 8080:3000 &
           PF_PID=$!
@@ -254,8 +292,6 @@ jobs:
             HEALTH_RESPONSE=$(curl -sf http://localhost:8080/api/health 2>/dev/null) && break
             sleep 2
           done
-
-          kill $PF_PID 2>/dev/null || true
 
           echo "Health check response: $HEALTH_RESPONSE"
 
@@ -286,9 +322,14 @@ jobs:
     steps:
       - name: Install kubectl
         run: |
-          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/arm64/kubectl"
+          # Install kubectl with SHA256 verification
+          KUBECTL_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
+          curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/arm64/kubectl"
+          curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/arm64/kubectl.sha256"
+          echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/
+          rm kubectl.sha256
           kubectl version --client
 
       - name: Set namespace
