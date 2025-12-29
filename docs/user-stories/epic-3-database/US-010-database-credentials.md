@@ -1,5 +1,7 @@
 # US-010: Secure Database Credentials Management
 
+**Status:** Done
+
 ## User Story
 
 **As a** developer,

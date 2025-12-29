@@ -1,5 +1,7 @@
 # US-009: Create Isolated Database per PR
 
+**Status:** Done
+
 ## User Story
 
 **As a** developer,
