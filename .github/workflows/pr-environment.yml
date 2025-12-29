@@ -264,10 +264,27 @@ jobs:
       - name: Health check
         run: |
           echo "Running in-cluster health check..."
-          # Get the first ready pod (rollout status already verified deployment)
+
+          # Wait for pod to be fully ready (not just running, but all containers ready)
+          echo "Waiting for pod to be ready..."
+          kubectl wait --for=condition=Ready pod \
+            -l app.kubernetes.io/name=demo-app \
+            -n "$NAMESPACE" \
+            --timeout=120s
+
+          # Small stabilization delay to ensure pod is fully operational
+          sleep 3
+
+          # Get the ready pod name
           POD_NAME=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=demo-app \
             --field-selector=status.phase=Running \
-            -o jsonpath='{.items[0].metadata.name}')
+            -o jsonpath='{.items[?(@.status.conditions[?(@.type=="Ready")].status=="True")].metadata.name}' | awk '{print $1}')
+
+          if [ -z "$POD_NAME" ]; then
+            echo "ERROR: No ready pod found"
+            kubectl get pods -n "$NAMESPACE" -o wide
+            exit 1
+          fi
 
           echo "Checking pod: $POD_NAME"
 
@@ -285,6 +302,9 @@ jobs:
           kubectl port-forward -n "$NAMESPACE" "pod/$POD_NAME" 8080:3000 &
           PF_PID=$!
 
+          # Wait for port-forward to be ready
+          sleep 2
+
           # Retry health check up to 10 times with 2s delay
           HEALTH_RESPONSE=""
           for i in {1..10}; do
@@ -299,6 +319,7 @@ jobs:
             echo "Health check PASSED"
           else
             echo "Health check FAILED"
+            kubectl logs -n "$NAMESPACE" "$POD_NAME" --tail=20
             exit 1
           fi
 
