@@ -235,11 +235,11 @@ jobs:
 
       - name: Health check
         run: |
-          echo "Waiting for pod to be ready..."
-          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=demo-app -n "$NAMESPACE" --timeout=2m
-
           echo "Running in-cluster health check..."
-          POD_NAME=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=demo-app -o jsonpath='{.items[0].metadata.name}')
+          # Get the first ready pod (rollout status already verified deployment)
+          POD_NAME=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=demo-app \
+            --field-selector=status.phase=Running \
+            -o jsonpath='{.items[0].metadata.name}')
 
           # Port-forward and check health endpoint with retry
           kubectl port-forward -n "$NAMESPACE" "pod/$POD_NAME" 8080:3000 &
