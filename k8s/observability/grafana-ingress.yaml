@@ -1,0 +1,32 @@
+# Grafana Ingress
+# Exposes Grafana at grafana.k8s-ee.genesluna.dev with TLS
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/component: observability
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.tls.certresolver: letsencrypt-prod
+spec:
+  ingressClassName: traefik
+  tls:
+    # Note: secretName omitted - Traefik provisions certificates automatically
+    # via the certresolver annotation (letsencrypt-prod)
+    - hosts:
+        - grafana.k8s-ee.genesluna.dev
+  rules:
+    - host: grafana.k8s-ee.genesluna.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: prometheus-grafana
+                port:
+                  number: 80

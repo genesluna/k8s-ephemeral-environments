@@ -1,0 +1,247 @@
+# kube-prometheus-stack Helm Values
+# Optimized for ARM64 VPS with limited resources
+# Includes Prometheus, Grafana, Alertmanager, and exporters
+
+# Global settings
+fullnameOverride: "prometheus"
+
+# =============================================================================
+# Prometheus Configuration
+# =============================================================================
+prometheus:
+  prometheusSpec:
+    # Retention: 7 days (6GB limit leaves 40% headroom for WAL/compaction)
+    retention: 7d
+    retentionSize: "6GB"
+
+    # Resource limits (target: <2GB RAM for Prometheus)
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1536Mi
+
+    # Storage configuration
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
+
+    # Scrape all namespaces including ephemeral PR namespaces
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+
+    # Security context for ARM64
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      fsGroup: 2000
+
+# =============================================================================
+# Alertmanager Configuration
+# =============================================================================
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Gi
+
+# =============================================================================
+# Grafana Configuration
+# =============================================================================
+grafana:
+  enabled: true
+
+  # Resource limits
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+  # Persistence for dashboards and settings
+  persistence:
+    enabled: true
+    storageClassName: local-path
+    size: 2Gi
+
+  # Disable init container that chowns data (not needed with local-path provisioner)
+  initChownData:
+    enabled: false
+
+  # Load OAuth credentials from Kubernetes Secret
+  # Secret must contain: GF_AUTH_GITHUB_CLIENT_ID and GF_AUTH_GITHUB_CLIENT_SECRET
+  envFromSecret: "grafana-oauth-secrets"
+
+  # Grafana configuration
+  grafana.ini:
+    server:
+      root_url: https://grafana.k8s-ee.genesluna.dev
+
+    # Security settings
+    security:
+      cookie_secure: true
+      cookie_samesite: strict
+      strict_transport_security: true
+      strict_transport_security_max_age_seconds: 15768000  # 6 months
+      x_content_type_options: true
+      x_xss_protection: true
+
+    # Disable anonymous access
+    auth.anonymous:
+      enabled: false
+
+    # Disable basic auth (password login)
+    auth.basic:
+      enabled: false
+
+    # Disable login form (only show OAuth buttons)
+    auth:
+      disable_login_form: true
+
+    # GitHub OAuth configuration
+    # Credentials loaded from envFromSecret (GF_AUTH_GITHUB_CLIENT_ID, GF_AUTH_GITHUB_CLIENT_SECRET)
+    auth.github:
+      enabled: true
+      allow_sign_up: true
+      scopes: user:email,read:org
+      auth_url: https://github.com/login/oauth/authorize
+      token_url: https://github.com/login/oauth/access_token
+      api_url: https://api.github.com/user
+      # Restrict access to koder-cat organization members
+      allowed_organizations: koder-cat
+
+  # Ingress disabled - we use separate IngressRoute
+  ingress:
+    enabled: false
+
+  # Sidecar for dashboard provisioning
+  sidecar:
+    dashboards:
+      enabled: true
+      searchNamespace: ALL
+    datasources:
+      enabled: true
+
+# =============================================================================
+# Node Exporter Configuration
+# =============================================================================
+nodeExporter:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+# Prometheus Node Exporter subchart
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+# =============================================================================
+# kube-state-metrics Configuration
+# =============================================================================
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+# =============================================================================
+# Prometheus Operator Configuration
+# =============================================================================
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+# =============================================================================
+# Disable k3s-incompatible Components
+# =============================================================================
+# k3s doesn't expose these metrics endpoints in the standard way
+kubeProxy:
+  enabled: false
+
+kubeEtcd:
+  enabled: false
+
+kubeScheduler:
+  enabled: false
+
+kubeControllerManager:
+  enabled: false
+
+# =============================================================================
+# Default Rules Configuration
+# =============================================================================
+defaultRules:
+  create: true
+  rules:
+    alertmanager: true
+    etcd: false
+    configReloaders: true
+    general: true
+    k8sContainerCpuUsageSecondsTotal: true
+    k8sContainerMemoryCache: true
+    k8sContainerMemoryRss: true
+    k8sContainerMemorySwap: true
+    k8sContainerResource: true
+    k8sPodOwner: true
+    kubeApiserverAvailability: true
+    kubeApiserverBurnrate: true
+    kubeApiserverHistogram: true
+    kubeApiserverSlos: true
+    kubeControllerManager: false
+    kubelet: true
+    kubeProxy: false
+    kubePrometheusGeneral: true
+    kubePrometheusNodeRecording: true
+    kubernetesApps: true
+    kubernetesResources: true
+    kubernetesStorage: true
+    kubernetesSystem: true
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+    kubeStateMetrics: true
+    network: true
+    node: true
+    nodeExporterAlerting: true
+    nodeExporterRecording: true
+    prometheus: true
+    prometheusOperator: true
