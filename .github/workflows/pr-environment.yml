@@ -244,7 +244,7 @@ jobs:
     if: github.event.action != 'closed'
     needs: [create-namespace, build-and-push]
     runs-on: arc-runner-set
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     permissions:
       contents: read
@@ -326,6 +326,7 @@ jobs:
           fi
 
           # Deploy with atomic flag for automatic rollback on failure
+          # Timeout increased to 6m to allow for PostgreSQL Cluster provisioning
           helm upgrade --install demo-app ./charts/demo-app \
             --namespace "$NAMESPACE" \
             --set projectId="${{ env.PROJECT_ID }}" \
@@ -337,7 +338,7 @@ jobs:
             --set branchName="$BRANCH_NAME" \
             --set previewDomain="${{ env.PREVIEW_DOMAIN }}" \
             --atomic \
-            --timeout 3m
+            --timeout 6m
 
       - name: Verify deployment
         run: |
