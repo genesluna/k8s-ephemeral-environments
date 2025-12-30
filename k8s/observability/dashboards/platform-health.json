@@ -355,7 +355,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(kube_pod_status_phase{namespace=\"gh-runners\", phase=\"Running\"})",
+          "expr": "sum(kube_pod_status_phase{namespace=\"arc-runners\", phase=\"Running\"})",
           "refId": "A"
         }
       ],
@@ -1128,7 +1128,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"gh-runners\", container!=\"\"}[5m])) by (pod)",
+          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"arc-runners\", container!=\"\"}[5m])) by (pod)",
           "legendFormat": "{{pod}}",
           "refId": "A"
         }
@@ -1218,7 +1218,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(container_memory_working_set_bytes{namespace=\"gh-runners\", container!=\"\"}) by (pod)",
+          "expr": "sum(container_memory_working_set_bytes{namespace=\"arc-runners\", container!=\"\"}) by (pod)",
           "legendFormat": "{{pod}}",
           "refId": "A"
         }
