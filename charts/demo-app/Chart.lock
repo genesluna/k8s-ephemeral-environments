@@ -2,5 +2,14 @@ dependencies:
 - name: postgresql
   repository: file://../postgresql
   version: 1.0.0
-digest: sha256:8b9ef078a1a8aa8f7a443696d46a7a7443b4890647b5c0b164782a6d7cfd24aa
-generated: "2025-12-30T13:54:42.459169002-03:00"
+- name: mongodb
+  repository: file://../mongodb
+  version: 1.0.0
+- name: redis
+  repository: file://../redis
+  version: 1.0.0
+- name: minio
+  repository: file://../minio
+  version: 1.0.0
+digest: sha256:1ee9a9827605eeab3d23c1f9bd62806865e1c3f3abe4563e126d6524c250ca42
+generated: "2025-12-30T22:21:46.832270928Z"

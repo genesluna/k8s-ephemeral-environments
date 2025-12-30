@@ -450,14 +450,14 @@ jobs:
             --set branchName="$BRANCH_NAME" \
             --set previewDomain="${{ env.PREVIEW_DOMAIN }}" \
             --atomic \
-            --timeout 3m
+            --timeout 6m
 
       - name: Verify deployment
         run: |
           set -euo pipefail
 
           echo "Waiting for deployment to be ready..."
-          kubectl rollout status deployment/${{ env.PROJECT_ID }}-pr-$PR_NUMBER-demo-app -n "$NAMESPACE" --timeout=3m
+          kubectl rollout status deployment/${{ env.PROJECT_ID }}-pr-$PR_NUMBER-demo-app -n "$NAMESPACE" --timeout=6m
 
           echo ""
           echo "=== Deployment Status ==="

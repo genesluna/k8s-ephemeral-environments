@@ -44,6 +44,10 @@ containerSecurityContext:
 
 # Startup probe configuration
 # Handles slow storage initialization
+#
+# NOTE: MinIO Operator manages container probes internally and ignores this
+# configuration. The probe config is kept for documentation purposes only.
+# See: https://github.com/minio/operator/issues/1367
 startupProbe:
   httpGet:
     path: /minio/health/live

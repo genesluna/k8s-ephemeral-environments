@@ -95,6 +95,20 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 5
           {{- end }}
+          {{- if .Values.startupProbe.enabled }}
+          startupProbe:
+            {{- if .Values.auth.enabled }}
+            tcpSocket:
+              port: redis
+            {{- else }}
+            exec:
+              command:
+                - redis-cli
+                - ping
+            {{- end }}
+            failureThreshold: {{ .Values.startupProbe.failureThreshold | default 30 }}
+            periodSeconds: {{ .Values.startupProbe.periodSeconds | default 2 }}
+          {{- end }}
       volumes:
         - name: data
           emptyDir: {}

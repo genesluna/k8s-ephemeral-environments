@@ -23,3 +23,15 @@ dependencies:
     version: "1.0.0"
     repository: "file://../postgresql"
     condition: postgresql.enabled
+  - name: mongodb
+    version: "1.0.0"
+    repository: "file://../mongodb"
+    condition: mongodb.enabled
+  - name: redis
+    version: "1.0.0"
+    repository: "file://../redis"
+    condition: redis.enabled
+  - name: minio
+    version: "1.0.0"
+    repository: "file://../minio"
+    condition: minio.enabled
