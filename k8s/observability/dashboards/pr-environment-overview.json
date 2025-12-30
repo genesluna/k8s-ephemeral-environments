@@ -516,7 +516,7 @@
     {
       "datasource": {
         "type": "loki",
-        "uid": "loki"
+        "uid": "${DS_LOKI}"
       },
       "gridPos": {
         "h": 8,
@@ -540,7 +540,7 @@
         {
           "datasource": {
             "type": "loki",
-            "uid": "loki"
+            "uid": "${DS_LOKI}"
           },
           "expr": "{namespace=\"$namespace\"}",
           "refId": "A"
@@ -619,6 +619,19 @@
   "tags": ["k8s-ee", "ephemeral", "pr-environment", "kubernetes"],
   "templating": {
     "list": [
+      {
+        "current": {},
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "name": "DS_LOKI",
+        "options": [],
+        "query": "loki",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
       {
         "current": {},
         "datasource": {
