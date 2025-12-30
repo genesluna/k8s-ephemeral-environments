@@ -85,6 +85,14 @@ containerSecurityContext:
     drop:
       - ALL
 
+# Prometheus metrics configuration
+metrics:
+  enabled: true
+  # Scrape interval
+  interval: 30s
+  # Scrape timeout
+  scrapeTimeout: 10s
+
 # PostgreSQL database configuration (uses library chart)
 postgresql:
   enabled: true

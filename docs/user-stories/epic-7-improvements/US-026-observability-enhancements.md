@@ -1,6 +1,6 @@
 # US-026: Observability Enhancements
 
-**Status:** Draft
+**Status:** Done
 
 ## User Story
 
@@ -10,12 +10,12 @@
 
 ## Acceptance Criteria
 
-- [ ] Demo-app exports Prometheus metrics
-- [ ] Structured logging with correlation IDs
-- [ ] ServiceMonitor auto-scrapes app metrics
-- [ ] Grafana dashboards for PR environments
-- [ ] Additional alerts for databases, quotas, SLOs
-- [ ] Comprehensive alert coverage
+- [x] Demo-app exports Prometheus metrics
+- [x] Structured logging with correlation IDs
+- [x] ServiceMonitor auto-scrapes app metrics
+- [x] Grafana dashboards for PR environments
+- [x] Additional alerts for databases, quotas, SLOs
+- [x] Comprehensive alert coverage
 
 ## Priority
 

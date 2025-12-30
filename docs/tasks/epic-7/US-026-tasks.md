@@ -1,10 +1,10 @@
 # Tasks for US-026: Observability Enhancements
 
-**Status:** Draft
+**Status:** Done
 
 ## Tasks
 
-### T-026.1: Add Prometheus Metrics to Demo App
+### ✅ T-026.1: Add Prometheus Metrics to Demo App
 - **Description:** Export application metrics in Prometheus format
 - **Acceptance Criteria:**
   - `prom-client` added to NestJS API
@@ -17,8 +17,11 @@
   - `demo-app/apps/api/package.json`
   - `demo-app/apps/api/src/main.ts`
   - `demo-app/apps/api/src/metrics/metrics.module.ts`
+  - `demo-app/apps/api/src/metrics/metrics.service.ts`
+  - `demo-app/apps/api/src/metrics/metrics.controller.ts`
+  - `demo-app/apps/api/src/middleware/metrics.middleware.ts`
 
-### T-026.2: Add Structured Logging (Pino)
+### ✅ T-026.2: Add Structured Logging (Pino)
 - **Description:** Replace console.log with structured JSON logging
 - **Acceptance Criteria:**
   - Pino logger integrated with NestJS
@@ -29,8 +32,10 @@
 - **Files:**
   - `demo-app/apps/api/package.json`
   - `demo-app/apps/api/src/main.ts`
+  - `demo-app/apps/api/src/app.module.ts`
+  - `demo-app/apps/api/src/database.service.ts`
 
-### T-026.3: Create ServiceMonitor
+### ✅ T-026.3: Create ServiceMonitor
 - **Description:** Auto-scrape app metrics with Prometheus Operator
 - **Acceptance Criteria:**
   - ServiceMonitor CRD created
@@ -42,7 +47,7 @@
   - `charts/demo-app/templates/servicemonitor.yaml`
   - `charts/demo-app/values.yaml`
 
-### T-026.4: Create Grafana Dashboards
+### ✅ T-026.4: Create Grafana Dashboards
 - **Description:** Pre-built dashboards for PR environment monitoring
 - **Acceptance Criteria:**
   - PR Environment Overview dashboard
@@ -53,9 +58,10 @@
 - **Files:**
   - `k8s/observability/dashboards/pr-environment-overview.json`
   - `k8s/observability/dashboards/application-metrics.json`
-  - `k8s/observability/dashboards/dashboard-configmap.yaml`
+  - `k8s/observability/dashboards/configmap.yaml`
+  - `k8s/observability/dashboards/README.md`
 
-### T-026.5: Add Missing Alerts
+### ✅ T-026.5: Add Missing Alerts
 - **Description:** Expand PrometheusRule with additional alerts
 - **Acceptance Criteria:**
   - Database connectivity alerts
@@ -67,7 +73,7 @@
 - **Estimate:** M
 - **Files:** `k8s/observability/custom-alerts.yaml`
 
-### T-026.6: Add Correlation IDs
+### ✅ T-026.6: Add Correlation IDs
 - **Description:** Request tracing via correlation ID header
 - **Acceptance Criteria:**
   - Correlation ID middleware in NestJS
@@ -76,8 +82,9 @@
   - ID returned in response header
 - **Estimate:** S
 - **Files:**
-  - `demo-app/apps/api/src/main.ts`
   - `demo-app/apps/api/src/middleware/correlation-id.middleware.ts`
+  - `demo-app/apps/api/src/middleware/correlation-id.middleware.spec.ts`
+  - `demo-app/apps/api/src/app.module.ts`
 
 ---
 

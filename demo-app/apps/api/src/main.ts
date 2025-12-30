@@ -1,9 +1,13 @@
 import { NestFactory } from '@nestjs/core';
+import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+
+  // Use Pino logger for all NestJS logging
+  app.useLogger(app.get(Logger));
 
   // Security headers with CSP configured for SPA
   app.use(
@@ -31,13 +35,14 @@ async function bootstrap() {
   app.enableShutdownHooks();
 
   app.setGlobalPrefix('api', {
-    exclude: ['/'],
+    exclude: ['/', 'metrics'],
   });
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
 
-  console.log(`Application is running on port ${port}`);
+  const logger = app.get(Logger);
+  logger.log(`Application is running on port ${port}`);
 }
 
 bootstrap().catch((err) => {

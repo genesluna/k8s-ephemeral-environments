@@ -1,19 +1,34 @@
-import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
+import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { PinoLogger, InjectPinoLogger } from 'nestjs-pino';
 import { Pool, PoolClient } from 'pg';
+import { MetricsService } from './metrics/metrics.service';
 
 @Injectable()
 export class DatabaseService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(DatabaseService.name);
   private pool: Pool | null = null;
   private isConnected = false;
+
+  constructor(
+    @InjectPinoLogger(DatabaseService.name)
+    private readonly logger: PinoLogger,
+    private readonly metrics: MetricsService,
+  ) {}
 
   get enabled(): boolean {
     return !!process.env.DATABASE_URL;
   }
 
+  private updatePoolMetrics() {
+    if (this.pool) {
+      this.metrics.dbPoolTotal.set(this.pool.totalCount);
+      this.metrics.dbPoolIdle.set(this.pool.idleCount);
+      this.metrics.dbPoolWaiting.set(this.pool.waitingCount);
+    }
+  }
+
   async onModuleInit() {
     if (!this.enabled) {
-      this.logger.log('DATABASE_URL not set, database features disabled');
+      this.logger.info('DATABASE_URL not set, database features disabled');
       return;
     }
 
@@ -31,9 +46,10 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       client.release();
 
       this.isConnected = true;
-      this.logger.log('Database connection established');
+      this.updatePoolMetrics();
+      this.logger.info('Database connection established');
     } catch (error) {
-      this.logger.error('Failed to connect to database', error);
+      this.logger.error({ error }, 'Failed to connect to database');
       this.isConnected = false;
     }
   }
@@ -41,7 +57,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   async onModuleDestroy() {
     if (this.pool) {
       await this.pool.end();
-      this.logger.log('Database connection closed');
+      this.logger.info('Database connection closed');
     }
   }
 
@@ -62,6 +78,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
 
     try {
       const result = await this.pool.query('SELECT version()');
+      this.updatePoolMetrics();
       return {
         enabled: true,
         connected: true,
@@ -78,8 +95,18 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     if (!this.pool) {
       throw new Error('Database not connected');
     }
-    const result = await this.pool.query(text, params);
-    return result.rows as T[];
+
+    const endTimer = this.metrics.dbQueryDuration.startTimer({
+      operation: 'query',
+    });
+
+    try {
+      const result = await this.pool.query(text, params);
+      return result.rows as T[];
+    } finally {
+      endTimer();
+      this.updatePoolMetrics();
+    }
   }
 
   async getClient(): Promise<PoolClient> {
