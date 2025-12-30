@@ -1,6 +1,6 @@
 # Tasks for US-024: Security Hardening
 
-**Status:** Draft
+**Status:** Done
 
 ## Tasks
 
