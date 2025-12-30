@@ -56,6 +56,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^3.0.0
         version: 3.2.4(vitest@3.2.4(@types/node@22.19.3)(jsdom@26.1.0)(terser@5.44.1))
+      eslint:
+        specifier: ^9.17.0
+        version: 9.39.2
       globals:
         specifier: ^15.14.0
         version: 15.15.0
@@ -99,6 +102,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^3.0.0
         version: 3.2.4(vitest@3.2.4(@types/node@22.19.3)(jsdom@26.1.0)(terser@5.44.1))
+      eslint:
+        specifier: ^9.17.0
+        version: 9.39.2
       eslint-plugin-react:
         specifier: ^7.37.0
         version: 7.37.5(eslint@9.39.2)
