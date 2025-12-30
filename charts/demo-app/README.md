@@ -10,6 +10,7 @@ Helm chart for deploying the demo application with PostgreSQL database support.
 - [Configuration](#configuration)
 - [Database](#database)
 - [Ingress](#ingress)
+- [Metrics](#metrics)
 - [Security](#security)
 - [Examples](#examples)
 
@@ -186,6 +187,48 @@ annotations:
   traefik.ingress.kubernetes.io/router.entrypoints: websecure
   traefik.ingress.kubernetes.io/router.tls.certresolver: letsencrypt-prod
 ```
+
+## Metrics
+
+Prometheus metrics are exported via the `/metrics` endpoint.
+
+### Metrics Settings
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `metrics.enabled` | Enable ServiceMonitor | `true` |
+| `metrics.interval` | Scrape interval | `30s` |
+| `metrics.scrapeTimeout` | Scrape timeout | `10s` |
+
+### ServiceMonitor
+
+When `metrics.enabled=true`, a ServiceMonitor is created for automatic Prometheus scraping:
+
+```yaml
+metrics:
+  enabled: true
+  interval: 30s
+  scrapeTimeout: 10s
+```
+
+### Available Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `http_request_duration_seconds` | Histogram | HTTP request latency |
+| `http_requests_total` | Counter | Total HTTP requests |
+| `db_pool_connections_total` | Gauge | Total DB connections |
+| `db_pool_connections_idle` | Gauge | Idle DB connections |
+| `db_pool_connections_waiting` | Gauge | Waiting for DB connection |
+| `db_query_duration_seconds` | Histogram | Database query latency |
+
+Plus default Node.js metrics (memory, CPU, event loop).
+
+### Grafana Dashboards
+
+Pre-built dashboards are available in `k8s/observability/dashboards/`:
+- `pr-environment-overview.json` - Namespace overview
+- `application-metrics.json` - Application-level metrics
 
 ## Security
 
