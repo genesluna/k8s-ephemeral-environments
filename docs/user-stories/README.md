@@ -6,14 +6,18 @@ This document provides an index of all user stories derived from the PRD.
 
 | Metric | Count |
 |--------|-------|
-| Total Epics | 6 |
-| Total User Stories | 21 |
+| Total Epics | 7 |
+| Total User Stories | 27 |
 | **Completed** | **21** ✅ |
-| Must Have | 12 |
-| Should Have | 7 |
-| Could Have | 2 |
+| Must Have | 13 |
+| Should Have | 11 |
+| Could Have | 3 |
 
 **Phase 1 Status:** Complete - All 21 user stories implemented and deployed.
+
+**Phase 1.5 Status:** Planning - Epic 7 (Platform Improvements) ready for development.
+
+**Phase 2 Status:** Future - EKS Migration (as defined in PRD).
 
 ---
 
@@ -70,6 +74,17 @@ This document provides an index of all user stories derived from the PRD.
 | [US-020](./epic-6-security/US-020-cleanup-job.md) | Implement Cleanup Job for Orphaned Resources | Should | 5 | ✅ Done |
 | [US-021](./epic-6-security/US-021-preserve-environment.md) | Preserve Environment Feature | Could | 5 | ✅ Done |
 
+### [Epic 7: Platform Improvements](./epic-7-improvements/)
+
+| Story | Title | Priority | Points | Status |
+|-------|-------|----------|--------|--------|
+| [US-022](./epic-7-improvements/US-022-ci-cd-performance.md) | CI/CD Pipeline Performance | Should | 5 | Draft |
+| [US-023](./epic-7-improvements/US-023-testing-framework.md) | Testing Framework Setup | Must | 8 | Draft |
+| [US-024](./epic-7-improvements/US-024-security-hardening.md) | Security Hardening | Should | 5 | Draft |
+| [US-025](./epic-7-improvements/US-025-documentation.md) | Developer Documentation | Should | 5 | Draft |
+| [US-026](./epic-7-improvements/US-026-observability-enhancements.md) | Observability Enhancements | Should | 8 | Draft |
+| [US-027](./epic-7-improvements/US-027-kubernetes-best-practices.md) | Kubernetes Best Practices | Could | 5 | Draft |
+
 ---
 
 ## Story Status Legend
@@ -81,16 +96,16 @@ This document provides an index of all user stories derived from the PRD.
 
 ## Prioritization (MoSCoW)
 
-- **Must** - Critical for MVP (12 stories, 57 points)
-- **Should** - Important but not blocking (7 stories, 31 points)
-- **Could** - Nice to have (2 stories, 8 points)
+- **Must** - Critical for MVP (13 stories, 65 points)
+- **Should** - Important but not blocking (11 stories, 54 points)
+- **Could** - Nice to have (3 stories, 13 points)
 - **Won't** - Out of scope for Phase 1
 
 ## Story Points Summary
 
 | Priority | Stories | Total Points |
 |----------|---------|--------------|
-| Must | 12 | 57 |
-| Should | 7 | 31 |
-| Could | 2 | 8 |
-| **Total** | **21** | **96** |
+| Must | 13 | 65 |
+| Should | 11 | 54 |
+| Could | 3 | 13 |
+| **Total** | **27** | **132** |

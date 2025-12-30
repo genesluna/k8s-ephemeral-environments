@@ -12,7 +12,8 @@ This document provides an index of all tasks organized by epic and user story.
 | Epic 4: Observability | 4 | 22 |
 | Epic 5: GitHub Runners | 3 | 17 |
 | Epic 6: Resource Management & Security | 4 | 23 |
-| **Total** | **21** | **117** |
+| Epic 7: Platform Improvements | 6 | 36 |
+| **Total** | **27** | **153** |
 
 ---
 
@@ -67,6 +68,17 @@ This document provides an index of all tasks organized by epic and user story.
 | US-020: Cleanup Job | [US-020-tasks.md](./epic-6/US-020-tasks.md) | 6 |
 | US-021: Preserve Feature | [US-021-tasks.md](./epic-6/US-021-tasks.md) | 6 |
 
+## Epic 7: Platform Improvements
+
+| Story | Task File | Tasks |
+|-------|-----------|-------|
+| US-022: CI/CD Performance | [US-022-tasks.md](./epic-7/US-022-tasks.md) | 6 |
+| US-023: Testing Framework | [US-023-tasks.md](./epic-7/US-023-tasks.md) | 6 |
+| US-024: Security Hardening | [US-024-tasks.md](./epic-7/US-024-tasks.md) | 6 |
+| US-025: Documentation | [US-025-tasks.md](./epic-7/US-025-tasks.md) | 6 |
+| US-026: Observability Enhancements | [US-026-tasks.md](./epic-7/US-026-tasks.md) | 6 |
+| US-027: K8s Best Practices | [US-027-tasks.md](./epic-7/US-027-tasks.md) | 6 |
+
 ---
 
 ## Estimate Legend
@@ -79,6 +91,7 @@ This document provides an index of all tasks organized by epic and user story.
 
 ## Task Status
 
+- `Draft` - Story defined but not yet refined
 - `To Do` - Not started
 - `In Progress` - Currently being worked on
 - `Done` - Completed
