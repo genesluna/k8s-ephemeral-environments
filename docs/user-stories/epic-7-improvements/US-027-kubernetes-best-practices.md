@@ -42,7 +42,7 @@
 
 - **PriorityClasses:**
   - Create `k8s/platform/priority-classes.yaml`
-  - `system-platform` (1000000) for cleanup jobs, operators
+  - `platform-critical` (1000000) for cleanup jobs, operators (renamed from system-platform; system- prefix is reserved)
   - `default-app` (100) for PR environments
 
 - **Pod Disruption Budgets:**
