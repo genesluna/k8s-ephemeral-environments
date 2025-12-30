@@ -26,10 +26,14 @@ Custom Grafana dashboards for monitoring PR ephemeral environments.
   - Request duration (p50/p95/p99)
   - Error rate (5xx)
   - Requests by status code (pie chart)
-  - Database connection pool
-  - Database query duration
-  - Node.js memory
+  - Database connection pool (total, idle, waiting)
+  - Database query duration (by operation and success)
+  - Node.js memory (resident, heap used, heap total)
   - Event loop lag
+
+**Database Query Duration Labels:**
+- `operation`: Query type (`query`, `health_check`, `list_tables`, `db_size`)
+- `success`: Whether query succeeded (`true`, `false`)
 
 ## Deployment
 
@@ -169,6 +173,14 @@ kubectl rollout restart deployment prometheus-grafana -n observability
 - **Custom metrics:** demo-app `/metrics` endpoint (prom-client)
 - **ServiceMonitor:** configured in demo-app Helm chart
 - **Scraping:** Prometheus Operator auto-discovers via ServiceMonitor
+
+**Key metrics:**
+- `http_requests_total` - Request counter with route, method, status_code
+- `http_request_duration_seconds` - Request latency histogram
+- `db_pool_connections_*` - Database connection pool gauges
+- `db_query_duration_seconds` - Query duration with operation, success labels
+
+See [demo-app API README](../../../demo-app/apps/api/README.md#prometheus-metrics) for full metrics documentation.
 
 ## Troubleshooting
 
