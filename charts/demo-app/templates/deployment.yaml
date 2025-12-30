@@ -31,23 +31,24 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
-      {{- if .Values.postgresql.enabled }}
+      {{- if or .Values.postgresql.enabled .Values.mongodb.enabled .Values.redis.enabled .Values.minio.enabled }}
       initContainers:
-        - name: wait-for-db
+        {{- if .Values.postgresql.enabled }}
+        - name: wait-for-postgresql
           image: busybox:1.36
           command:
             - sh
             - -c
             - |
-              echo "Waiting for PostgreSQL to be ready (timeout: 120s)..."
+              echo "Waiting for PostgreSQL (timeout: 120s)..."
               TIMEOUT=120
               ELAPSED=0
               while ! nc -z {{ include "postgresql.serviceName" .Subcharts.postgresql }} 5432; do
                 if [ $ELAPSED -ge $TIMEOUT ]; then
-                  echo "ERROR: Timed out waiting for PostgreSQL after ${TIMEOUT}s"
+                  echo "ERROR: Timed out waiting for PostgreSQL"
                   exit 1
                 fi
-                echo "PostgreSQL is not ready yet, waiting... (${ELAPSED}s/${TIMEOUT}s)"
+                echo "PostgreSQL not ready... (${ELAPSED}s/${TIMEOUT}s)"
                 sleep 2
                 ELAPSED=$((ELAPSED + 2))
               done
@@ -61,6 +62,97 @@ spec:
               memory: 64Mi
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+        {{- end }}
+        {{- if .Values.mongodb.enabled }}
+        - name: wait-for-mongodb
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for MongoDB (timeout: 120s)..."
+              TIMEOUT=120
+              ELAPSED=0
+              while ! nc -z {{ include "mongodb.serviceName" .Subcharts.mongodb }} 27017; do
+                if [ $ELAPSED -ge $TIMEOUT ]; then
+                  echo "ERROR: Timed out waiting for MongoDB"
+                  exit 1
+                fi
+                echo "MongoDB not ready... (${ELAPSED}s/${TIMEOUT}s)"
+                sleep 2
+                ELAPSED=$((ELAPSED + 2))
+              done
+              echo "MongoDB is ready!"
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 50m
+              memory: 64Mi
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+        {{- end }}
+        {{- if .Values.redis.enabled }}
+        - name: wait-for-redis
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for Redis (timeout: 60s)..."
+              TIMEOUT=60
+              ELAPSED=0
+              while ! nc -z {{ include "redis.serviceName" .Subcharts.redis }} 6379; do
+                if [ $ELAPSED -ge $TIMEOUT ]; then
+                  echo "ERROR: Timed out waiting for Redis"
+                  exit 1
+                fi
+                echo "Redis not ready... (${ELAPSED}s/${TIMEOUT}s)"
+                sleep 2
+                ELAPSED=$((ELAPSED + 2))
+              done
+              echo "Redis is ready!"
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 50m
+              memory: 64Mi
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+        {{- end }}
+        {{- if .Values.minio.enabled }}
+        - name: wait-for-minio
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for MinIO (timeout: 120s)..."
+              TIMEOUT=120
+              ELAPSED=0
+              while ! nc -z {{ include "minio.serviceName" .Subcharts.minio }} 9000; do
+                if [ $ELAPSED -ge $TIMEOUT ]; then
+                  echo "ERROR: Timed out waiting for MinIO"
+                  exit 1
+                fi
+                echo "MinIO not ready... (${ELAPSED}s/${TIMEOUT}s)"
+                sleep 2
+                ELAPSED=$((ELAPSED + 2))
+              done
+              echo "MinIO is ready!"
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 50m
+              memory: 64Mi
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+        {{- end }}
       {{- end }}
       containers:
         - name: {{ .Chart.Name }}

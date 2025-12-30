@@ -124,3 +124,18 @@ postgresql:
     limits:
       memory: 512Mi
       cpu: 500m
+
+# MongoDB configuration (uses library chart)
+# Enable for applications requiring MongoDB
+mongodb:
+  enabled: false
+
+# Redis configuration (uses library chart)
+# Enable for applications requiring Redis caching
+redis:
+  enabled: false
+
+# MinIO configuration (uses library chart)
+# Enable for applications requiring S3-compatible storage
+minio:
+  enabled: false

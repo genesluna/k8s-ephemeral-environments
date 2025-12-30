@@ -24,3 +24,10 @@ auth:
 config:
   maxmemory: 100mb
   maxmemoryPolicy: allkeys-lru
+
+# Startup probe configuration
+# Allows Redis up to 60 seconds to start before being killed
+startupProbe:
+  enabled: true
+  failureThreshold: 30
+  periodSeconds: 2

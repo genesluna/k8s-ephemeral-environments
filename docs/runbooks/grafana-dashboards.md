@@ -197,8 +197,16 @@ Any dashboard with Loki log panels must include this variable in the `templating
 
 **Cause:** Race condition - Grafana starts before sidecar writes datasource files
 
-**Fix:**
+**Current Prevention:** The datasource sidecar has been DISABLED (`sidecar.datasources.enabled: false`). All datasources (Prometheus, Loki, Alertmanager) are now configured via `additionalDataSources` in the Helm values, which provisions them directly via ConfigMap without sidecar involvement. This eliminates the race condition.
+
+**If it still occurs:**
 ```bash
+# Check Grafana logs for provisioning errors
+ssh ubuntu@168.138.151.63 "kubectl logs -n observability -l app.kubernetes.io/name=grafana -c grafana --tail=50"
+
+# Verify datasource ConfigMap exists
+ssh ubuntu@168.138.151.63 "kubectl get configmap -n observability | grep grafana"
+
 # Rollback to previous working version
 ssh ubuntu@168.138.151.63 "kubectl rollout undo deployment prometheus-grafana -n observability"
 
@@ -206,7 +214,7 @@ ssh ubuntu@168.138.151.63 "kubectl rollout undo deployment prometheus-grafana -n
 ssh ubuntu@168.138.151.63 "kubectl get pods -n observability -l app.kubernetes.io/name=grafana -w"
 ```
 
-**Prevention:** Never restart Grafana - use sidecar auto-reload instead.
+**Best Practice:** Prefer using sidecar auto-reload for dashboard changes instead of restarting Grafana.
 
 ### ConfigMap not updating
 
