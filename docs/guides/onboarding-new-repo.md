@@ -42,6 +42,12 @@ concurrency:
   group: pr-env-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  packages: write
+  pull-requests: write
+  security-events: write
+
 jobs:
   pr-environment:
     uses: genesluna/k8s-ephemeral-environments/.github/workflows/pr-environment-reusable.yml@main

@@ -18,6 +18,13 @@ concurrency:
   group: pr-env-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
+# Permissions required by the reusable workflow
+permissions:
+  contents: read
+  packages: write
+  pull-requests: write
+  security-events: write
+
 jobs:
   pr-environment:
     uses: ./.github/workflows/pr-environment-reusable.yml

@@ -26,6 +26,12 @@ on:
   pull_request:
     types: [opened, reopened, synchronize, closed]
 
+permissions:
+  contents: read
+  packages: write
+  pull-requests: write
+  security-events: write
+
 jobs:
   pr-environment:
     uses: genesluna/k8s-ephemeral-environments/.github/workflows/pr-environment-reusable.yml@main
