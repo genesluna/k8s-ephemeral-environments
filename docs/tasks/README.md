@@ -13,7 +13,8 @@ This document provides an index of all tasks organized by epic and user story.
 | Epic 5: GitHub Runners | 3 | 17 |
 | Epic 6: Resource Management & Security | 4 | 23 |
 | Epic 7: Platform Improvements | 6 | 36 |
-| **Total** | **27** | **153** |
+| Epic 8: Simplified Onboarding | 6 | 41 |
+| **Total** | **33** | **194** |
 
 ---
 

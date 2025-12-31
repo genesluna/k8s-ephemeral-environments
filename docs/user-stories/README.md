@@ -6,18 +6,20 @@ This document provides an index of all user stories derived from the PRD.
 
 | Metric | Count |
 |--------|-------|
-| Total Epics | 7 |
-| Total User Stories | 27 |
+| Total Epics | 8 |
+| Total User Stories | 33 |
 | **Completed** | **27** ✅ |
-| Must Have | 13 |
-| Should Have | 11 |
+| Must Have | 18 |
+| Should Have | 12 |
 | Could Have | 3 |
 
 **Phase 1 Status:** Complete - All 21 user stories implemented and deployed.
 
 **Phase 1.5 Status:** Complete - All 6 user stories in Epic 7 implemented and deployed.
 
-**Phase 2 Status:** Future - EKS Migration (as defined in PRD).
+**Phase 2 Status:** In Progress - Epic 8: Simplified Onboarding (6 stories).
+
+**Phase 3 Status:** Future - EKS Migration (as defined in PRD).
 
 ---
 
@@ -85,6 +87,17 @@ This document provides an index of all user stories derived from the PRD.
 | [US-026](./epic-7-improvements/US-026-observability-enhancements.md) | Observability Enhancements | Should | 8 | ✅ Done |
 | [US-027](./epic-7-improvements/US-027-kubernetes-best-practices.md) | Kubernetes Best Practices | Could | 5 | ✅ Done |
 
+### [Epic 8: Simplified Onboarding](./epic-8-simplified-onboarding/)
+
+| Story | Title | Priority | Points | Status |
+|-------|-------|----------|--------|--------|
+| [US-028](./epic-8-simplified-onboarding/US-028-publish-helm-charts.md) | Publish Helm Charts to OCI Registry | Must | 5 | Draft |
+| [US-029](./epic-8-simplified-onboarding/US-029-generic-app-chart.md) | Create Generic Application Chart | Must | 8 | Draft |
+| [US-030](./epic-8-simplified-onboarding/US-030-composite-actions.md) | Create Reusable Composite Actions | Must | 13 | Draft |
+| [US-031](./epic-8-simplified-onboarding/US-031-reusable-workflow.md) | Create Reusable Workflow | Must | 8 | Draft |
+| [US-032](./epic-8-simplified-onboarding/US-032-config-schema.md) | Define Configuration Schema | Must | 5 | Draft |
+| [US-033](./epic-8-simplified-onboarding/US-033-documentation-dogfood.md) | Update Documentation & Dogfood | Should | 5 | Draft |
+
 ---
 
 ## Story Status Legend
@@ -96,8 +109,8 @@ This document provides an index of all user stories derived from the PRD.
 
 ## Prioritization (MoSCoW)
 
-- **Must** - Critical for MVP (13 stories, 65 points)
-- **Should** - Important but not blocking (11 stories, 54 points)
+- **Must** - Critical for MVP (18 stories, 104 points)
+- **Should** - Important but not blocking (12 stories, 59 points)
 - **Could** - Nice to have (3 stories, 13 points)
 - **Won't** - Out of scope for Phase 1
 
@@ -105,7 +118,7 @@ This document provides an index of all user stories derived from the PRD.
 
 | Priority | Stories | Total Points |
 |----------|---------|--------------|
-| Must | 13 | 65 |
-| Should | 11 | 54 |
+| Must | 18 | 104 |
+| Should | 12 | 59 |
 | Could | 3 | 13 |
-| **Total** | **27** | **132** |
+| **Total** | **33** | **176** |

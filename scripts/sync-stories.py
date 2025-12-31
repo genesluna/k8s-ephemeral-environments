@@ -48,6 +48,7 @@ EPIC_LABELS: Dict[str, str] = {
     "epic-5": "epic-5-runners",
     "epic-6": "epic-6-security",
     "epic-7": "epic-7-improvements",
+    "epic-8": "epic-8-onboarding",
 }
 
 # Allowed characters in titles (alphanumeric, spaces, common punctuation)
