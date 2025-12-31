@@ -278,10 +278,19 @@ kubectl port-forward -n $NS svc/k8s-ee-pr-42-demo-app 3000:80
 | Check CI status | `gh pr checks` |
 | Merge PR | `gh pr merge --squash` |
 
+## Adding Your Own Repository
+
+To add PR preview environments to your own repository, see the [Onboarding Guide](guides/onboarding-new-repo.md).
+
+**Quick start:** Add just 2 files:
+1. `k8s-ee.yaml` - Configuration (project ID, app settings, databases)
+2. `.github/workflows/pr-environment.yml` - ~10 lines calling the reusable workflow
+
 ## Next Steps
 
 Now that you're set up, explore these resources:
 
+- [Onboarding Guide](guides/onboarding-new-repo.md) - Add PR environments to your repo
 - [CONTRIBUTING.md](../CONTRIBUTING.md) - Contribution guidelines
 - [Troubleshooting Guide](guides/troubleshooting.md) - Debug common issues
 - [Grafana Dashboards Runbook](runbooks/grafana-dashboards.md) - Dashboard operations
