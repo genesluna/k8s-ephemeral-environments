@@ -1,0 +1,264 @@
+name: 'Validate Config'
+description: 'Parse and validate k8s-ee.yaml configuration file against JSON schema'
+
+inputs:
+  config-path:
+    description: 'Path to k8s-ee.yaml configuration file'
+    required: false
+    default: 'k8s-ee.yaml'
+  pr-number:
+    description: 'PR number for derived values'
+    required: true
+  repository:
+    description: 'GitHub repository (owner/repo)'
+    required: true
+  preview-domain:
+    description: 'Base domain for preview URLs'
+    required: false
+    default: 'k8s-ee.genesluna.dev'
+
+outputs:
+  config-json:
+    description: 'Full configuration as JSON with defaults applied'
+    value: ${{ steps.parse.outputs.config-json }}
+  project-id:
+    description: 'Project ID from configuration'
+    value: ${{ steps.parse.outputs.project-id }}
+  namespace:
+    description: 'Computed namespace (projectId-pr-number)'
+    value: ${{ steps.parse.outputs.namespace }}
+  preview-url:
+    description: 'Full preview URL'
+    value: ${{ steps.parse.outputs.preview-url }}
+  app-port:
+    description: 'Application port'
+    value: ${{ steps.parse.outputs.app-port }}
+  health-path:
+    description: 'Health check path'
+    value: ${{ steps.parse.outputs.health-path }}
+  image-context:
+    description: 'Docker build context'
+    value: ${{ steps.parse.outputs.image-context }}
+  image-dockerfile:
+    description: 'Dockerfile path'
+    value: ${{ steps.parse.outputs.image-dockerfile }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        PR_NUMBER: ${{ inputs.pr-number }}
+        REPOSITORY: ${{ inputs.repository }}
+        CONFIG_PATH: ${{ inputs.config-path }}
+        PREVIEW_DOMAIN: ${{ inputs.preview-domain }}
+      run: |
+        set -euo pipefail
+
+        # Validate PR number is numeric
+        if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
+          echo "ERROR: pr-number must be numeric"
+          echo "Received: '$PR_NUMBER'"
+          exit 1
+        fi
+
+        # Validate repository format
+        if ! [[ "$REPOSITORY" =~ ^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$ ]]; then
+          echo "ERROR: repository must be in format 'owner/repo'"
+          echo "Received: '$REPOSITORY'"
+          exit 1
+        fi
+
+        # Validate config-path doesn't contain path traversal
+        if [[ "$CONFIG_PATH" =~ \.\. ]] || [[ "$CONFIG_PATH" =~ ^/ ]]; then
+          echo "ERROR: config-path cannot contain '..' or start with '/'"
+          echo "Received: '$CONFIG_PATH'"
+          exit 1
+        fi
+
+        # Validate preview-domain format
+        if ! [[ "$PREVIEW_DOMAIN" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]+[a-zA-Z0-9]$ ]]; then
+          echo "ERROR: preview-domain must be a valid domain name"
+          echo "Received: '$PREVIEW_DOMAIN'"
+          exit 1
+        fi
+
+        echo "Input validation passed"
+
+    - name: Install tools
+      shell: bash
+      env:
+        RUNNER_ARCH: ${{ runner.arch }}
+      run: |
+        set -euo pipefail
+
+        # Determine architecture
+        if [ "$RUNNER_ARCH" = "ARM64" ]; then
+          ARCH="arm64"
+          YQ_SHA256="a2cc6ca84dba8b156612df59dd8c2a8362f00aabceeb46d10d6e9c67da1199f6"
+        else
+          ARCH="amd64"
+          YQ_SHA256="654fb44c8d4fb524ad3d271b636624a0c5ec8a6c95ede5d264c6f4763a3cfc73"
+        fi
+
+        # Install yq for YAML parsing (with checksum verification)
+        if ! command -v yq &> /dev/null; then
+          echo "Installing yq..."
+          YQ_VERSION="v4.44.1"
+          curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${ARCH}" -o /tmp/yq
+
+          echo "Verifying yq checksum..."
+          echo "${YQ_SHA256}  /tmp/yq" | sha256sum -c -
+
+          chmod +x /tmp/yq
+          sudo mv /tmp/yq /usr/local/bin/yq
+          echo "yq installed: $(yq --version)"
+        else
+          echo "yq already installed: $(yq --version)"
+        fi
+
+        # Install ajv-cli for JSON Schema validation
+        if ! command -v ajv &> /dev/null; then
+          echo "Installing ajv-cli..."
+          npm install -g ajv-cli ajv-formats
+        else
+          echo "ajv-cli already installed"
+        fi
+
+    - name: Check config file exists
+      shell: bash
+      env:
+        CONFIG_PATH: ${{ inputs.config-path }}
+      run: |
+        set -euo pipefail
+
+        # Verify file is within workspace (defense in depth)
+        RESOLVED_PATH=$(realpath -m "$CONFIG_PATH" 2>/dev/null || echo "$CONFIG_PATH")
+        WORKSPACE=$(realpath "$GITHUB_WORKSPACE")
+
+        if [[ ! "$RESOLVED_PATH" =~ ^"$WORKSPACE" ]]; then
+          echo "ERROR: config-path must be within the repository"
+          exit 1
+        fi
+
+        if [ ! -f "$CONFIG_PATH" ]; then
+          echo "ERROR: Configuration file not found: $CONFIG_PATH"
+          echo ""
+          echo "Please create a k8s-ee.yaml file in your repository root with at least:"
+          echo ""
+          echo "projectId: your-project-id"
+          echo ""
+          exit 1
+        fi
+
+        echo "Found configuration file: $CONFIG_PATH"
+
+    - name: Parse and validate config
+      id: parse
+      shell: bash
+      env:
+        CONFIG_PATH: ${{ inputs.config-path }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        PREVIEW_DOMAIN: ${{ inputs.preview-domain }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+
+        # Convert YAML to JSON
+        echo "Parsing configuration..."
+        CONFIG_JSON=$(yq -o=json "$CONFIG_PATH")
+
+        # Write config to temp file for validation
+        echo "$CONFIG_JSON" > /tmp/config.json
+
+        # Validate against schema from action directory
+        SCHEMA_PATH="${ACTION_PATH}/schema.json"
+        echo "Validating configuration against schema..."
+        if ! ajv validate -s "$SCHEMA_PATH" -d /tmp/config.json --all-errors -c ajv-formats 2>&1; then
+          echo ""
+          echo "ERROR: Configuration validation failed"
+          echo "Please check your k8s-ee.yaml file against the schema requirements"
+          exit 1
+        fi
+        echo "Configuration is valid"
+
+        # Extract projectId (required field, already validated by schema)
+        PROJECT_ID=$(echo "$CONFIG_JSON" | jq -r '.projectId')
+
+        # Additional validation: projectId format (defense in depth)
+        if ! [[ "$PROJECT_ID" =~ ^[a-z0-9]([a-z0-9-]{0,18}[a-z0-9])?$ ]]; then
+          echo "ERROR: projectId must be lowercase alphanumeric with hyphens, 1-20 chars, start/end with alphanumeric"
+          echo "Received: '$PROJECT_ID'"
+          exit 1
+        fi
+
+        # Compute derived values
+        NAMESPACE="${PROJECT_ID}-pr-${PR_NUMBER}"
+        PREVIEW_URL="https://${NAMESPACE}.${PREVIEW_DOMAIN}"
+
+        # Apply defaults and extract values
+        APP_PORT=$(echo "$CONFIG_JSON" | jq -r '.app.port // 3000')
+        HEALTH_PATH=$(echo "$CONFIG_JSON" | jq -r '.app.healthPath // "/health"')
+        IMAGE_CONTEXT=$(echo "$CONFIG_JSON" | jq -r '.image.context // "."')
+        IMAGE_DOCKERFILE=$(echo "$CONFIG_JSON" | jq -r '.image.dockerfile // "Dockerfile"')
+
+        # Build final config with defaults applied
+        FINAL_CONFIG=$(echo "$CONFIG_JSON" | jq --arg ns "$NAMESPACE" --arg url "$PREVIEW_URL" --arg pr "$PR_NUMBER" '
+          . +
+          {
+            "_computed": {
+              "namespace": $ns,
+              "previewUrl": $url,
+              "prNumber": ($pr | tonumber)
+            }
+          } |
+          .app = (.app // {}) |
+          .app.port = (.app.port // 3000) |
+          .app.healthPath = (.app.healthPath // "/health") |
+          .image = (.image // {}) |
+          .image.context = (.image.context // ".") |
+          .image.dockerfile = (.image.dockerfile // "Dockerfile") |
+          .resources = (.resources // {}) |
+          .resources.requests = (.resources.requests // {}) |
+          .resources.requests.cpu = (.resources.requests.cpu // "50m") |
+          .resources.requests.memory = (.resources.requests.memory // "128Mi") |
+          .resources.limits = (.resources.limits // {}) |
+          .resources.limits.cpu = (.resources.limits.cpu // "200m") |
+          .resources.limits.memory = (.resources.limits.memory // "384Mi") |
+          .databases = (.databases // {}) |
+          .databases.postgresql = (.databases.postgresql // false) |
+          .databases.mongodb = (.databases.mongodb // false) |
+          .databases.redis = (.databases.redis // false) |
+          .databases.minio = (.databases.minio // false) |
+          .databases.mariadb = (.databases.mariadb // false) |
+          .ingress = (.ingress // {}) |
+          .ingress.enabled = (.ingress.enabled // true) |
+          .metrics = (.metrics // {}) |
+          .metrics.enabled = (.metrics.enabled // false)
+        ')
+
+        # Output results using heredoc for multiline JSON
+        {
+          echo "config-json<<EOF"
+          echo "$FINAL_CONFIG"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
+
+        echo "project-id=$PROJECT_ID" >> "$GITHUB_OUTPUT"
+        echo "namespace=$NAMESPACE" >> "$GITHUB_OUTPUT"
+        echo "preview-url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
+        echo "app-port=$APP_PORT" >> "$GITHUB_OUTPUT"
+        echo "health-path=$HEALTH_PATH" >> "$GITHUB_OUTPUT"
+        echo "image-context=$IMAGE_CONTEXT" >> "$GITHUB_OUTPUT"
+        echo "image-dockerfile=$IMAGE_DOCKERFILE" >> "$GITHUB_OUTPUT"
+
+        echo ""
+        echo "=== Configuration Summary ==="
+        echo "Project ID: $PROJECT_ID"
+        echo "Namespace: $NAMESPACE"
+        echo "Preview URL: $PREVIEW_URL"
+        echo "App Port: $APP_PORT"
+        echo "Health Path: $HEALTH_PATH"
+        echo "Image Context: $IMAGE_CONTEXT"
+        echo "Dockerfile: $IMAGE_DOCKERFILE"

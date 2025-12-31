@@ -1,10 +1,10 @@
 # Tasks for US-030: Create Reusable Composite Actions
 
-**Status:** Draft
+**Status:** Done
 
 ## Tasks
 
-### T-030.1: Create validate-config Action
+### T-030.1: Create validate-config Action ✅
 - **Description:** Create action to parse and validate k8s-ee.yaml
 - **Acceptance Criteria:**
   - Checks out calling repository
@@ -15,8 +15,9 @@
   - Clear error messages on validation failure
 - **Estimate:** M
 - **Files:** `.github/actions/validate-config/action.yml`, `.github/actions/validate-config/schema.json`
+- **Status:** Done
 
-### T-030.2: Create setup-tools Action
+### T-030.2: Create setup-tools Action ✅
 - **Description:** Create action to install kubectl and helm with caching
 - **Acceptance Criteria:**
   - Installs kubectl with version parameter
@@ -25,8 +26,9 @@
   - Verifies installation
 - **Estimate:** S
 - **Files:** `.github/actions/setup-tools/action.yml`
+- **Status:** Done
 
-### T-030.3: Create create-namespace Action
+### T-030.3: Create create-namespace Action ✅
 - **Description:** Create action to create namespace with policies
 - **Acceptance Criteria:**
   - Creates namespace with labels and annotations
@@ -37,8 +39,9 @@
   - Idempotent (safe to run multiple times)
 - **Estimate:** L
 - **Files:** `.github/actions/create-namespace/action.yml`
+- **Status:** Done
 
-### T-030.4: Create build-image Action
+### T-030.4: Create build-image Action ✅
 - **Description:** Create action to build and push container image
 - **Acceptance Criteria:**
   - Sets up QEMU and Buildx
@@ -50,8 +53,9 @@
   - Outputs image tag and digest
 - **Estimate:** M
 - **Files:** `.github/actions/build-image/action.yml`
+- **Status:** Done
 
-### T-030.5: Create deploy-app Action
+### T-030.5: Create deploy-app Action ✅
 - **Description:** Create action to deploy application with Helm
 - **Acceptance Criteria:**
   - Pulls k8s-ee-app chart from OCI registry
@@ -62,8 +66,9 @@
   - Outputs preview URL
 - **Estimate:** M
 - **Files:** `.github/actions/deploy-app/action.yml`
+- **Status:** Done
 
-### T-030.6: Create pr-comment Action
+### T-030.6: Create pr-comment Action ✅
 - **Description:** Create action to post PR comment with preview URL
 - **Acceptance Criteria:**
   - Creates or updates PR comment (idempotent)
@@ -73,8 +78,9 @@
   - Works with github-script
 - **Estimate:** S
 - **Files:** `.github/actions/pr-comment/action.yml`
+- **Status:** Done
 
-### T-030.7: Create destroy-namespace Action
+### T-030.7: Create destroy-namespace Action ✅
 - **Description:** Create action to safely delete namespace
 - **Acceptance Criteria:**
   - Verifies ownership before deletion
@@ -84,6 +90,7 @@
   - Updates PR comment on completion
 - **Estimate:** S
 - **Files:** `.github/actions/destroy-namespace/action.yml`
+- **Status:** Done
 
 ---
 

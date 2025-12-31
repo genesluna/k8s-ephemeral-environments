@@ -1,0 +1,482 @@
+name: 'Create Namespace'
+description: 'Create PR namespace with ResourceQuota, LimitRange, and NetworkPolicies'
+
+inputs:
+  namespace:
+    description: 'Namespace name (e.g., project-pr-123)'
+    required: true
+  project-id:
+    description: 'Project identifier'
+    required: true
+  pr-number:
+    description: 'Pull request number'
+    required: true
+  branch-name:
+    description: 'Git branch name (will be sanitized for K8s labels)'
+    required: true
+  commit-sha:
+    description: 'Git commit SHA'
+    required: true
+  repository:
+    description: 'GitHub repository (owner/repo)'
+    required: true
+  k8s-api-ip:
+    description: 'Kubernetes API server IP for NetworkPolicy egress'
+    required: false
+    default: '10.0.0.39'
+
+outputs:
+  created:
+    description: 'Whether namespace was created (true) or updated (false)'
+    value: ${{ steps.create.outputs.created }}
+  namespace:
+    description: 'The namespace name'
+    value: ${{ steps.create.outputs.namespace }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        NAMESPACE: ${{ inputs.namespace }}
+        PROJECT_ID: ${{ inputs.project-id }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        COMMIT_SHA: ${{ inputs.commit-sha }}
+        REPOSITORY: ${{ inputs.repository }}
+        K8S_API_IP: ${{ inputs.k8s-api-ip }}
+      run: |
+        set -euo pipefail
+
+        # Validate namespace format
+        if ! [[ "$NAMESPACE" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
+          echo "ERROR: Invalid namespace format"
+          echo "Received: '$NAMESPACE'"
+          exit 1
+        fi
+
+        # Validate project-id format
+        if ! [[ "$PROJECT_ID" =~ ^[a-z0-9]([a-z0-9-]{0,18}[a-z0-9])?$ ]]; then
+          echo "ERROR: project-id must be lowercase alphanumeric with hyphens, 1-20 chars"
+          echo "Received: '$PROJECT_ID'"
+          exit 1
+        fi
+
+        # Validate PR number is numeric
+        if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
+          echo "ERROR: pr-number must be numeric"
+          echo "Received: '$PR_NUMBER'"
+          exit 1
+        fi
+
+        # Validate commit SHA format
+        if ! [[ "$COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+          echo "ERROR: commit-sha must be a 40-character hex string"
+          echo "Received: '$COMMIT_SHA'"
+          exit 1
+        fi
+
+        # Validate repository format
+        if ! [[ "$REPOSITORY" =~ ^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$ ]]; then
+          echo "ERROR: repository must be in format 'owner/repo'"
+          echo "Received: '$REPOSITORY'"
+          exit 1
+        fi
+
+        # Validate K8s API IP format
+        if ! [[ "$K8S_API_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "ERROR: k8s-api-ip must be a valid IPv4 address"
+          echo "Received: '$K8S_API_IP'"
+          exit 1
+        fi
+
+        echo "Input validation passed"
+
+    - name: Sanitize branch name
+      id: sanitize
+      shell: bash
+      env:
+        BRANCH_RAW: ${{ inputs.branch-name }}
+      run: |
+        set -euo pipefail
+
+        # Sanitize branch name for K8s labels
+        # Requirements: alphanumeric, hyphens, underscores, dots; start/end with alphanumeric; max 63 chars
+        BRANCH_SANITIZED=$(printf '%s' "$BRANCH_RAW" | \
+          sed 's/[^a-zA-Z0-9._-]/-/g' | \
+          sed 's/--*/-/g' | \
+          sed 's/^[^a-zA-Z0-9]*//' | \
+          cut -c1-63 | \
+          sed 's/[^a-zA-Z0-9]*$//')
+
+        # Fallback if result is empty
+        BRANCH_SANITIZED="${BRANCH_SANITIZED:-unknown}"
+
+        echo "branch-name=$BRANCH_SANITIZED" >> "$GITHUB_OUTPUT"
+        echo "Sanitized branch name: $BRANCH_SANITIZED"
+
+    - name: Create or update namespace
+      id: create
+      shell: bash
+      env:
+        NAMESPACE: ${{ inputs.namespace }}
+        PROJECT_ID: ${{ inputs.project-id }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        BRANCH_NAME: ${{ steps.sanitize.outputs.branch-name }}
+        COMMIT_SHA: ${{ inputs.commit-sha }}
+        REPOSITORY: ${{ inputs.repository }}
+        K8S_API_IP: ${{ inputs.k8s-api-ip }}
+      run: |
+        set -euo pipefail
+
+        CREATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+        # Check if namespace already exists
+        if kubectl get namespace "$NAMESPACE" >/dev/null 2>&1; then
+          echo "Namespace $NAMESPACE already exists, verifying ownership..."
+
+          # Verify this namespace belongs to us (security check)
+          MANAGED_BY=$(kubectl get namespace "$NAMESPACE" \
+            -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}' 2>/dev/null || echo "")
+          REPO=$(kubectl get namespace "$NAMESPACE" \
+            -o jsonpath='{.metadata.annotations.k8s-ee/repository}' 2>/dev/null || echo "")
+
+          if [ "$MANAGED_BY" != "github-actions" ]; then
+            echo "ERROR: Namespace $NAMESPACE exists but is not managed by github-actions"
+            echo "Found managed-by: $MANAGED_BY"
+            exit 1
+          fi
+
+          if [ -n "$REPO" ] && [ "$REPO" != "$REPOSITORY" ]; then
+            echo "ERROR: Namespace $NAMESPACE belongs to different repository: $REPO"
+            exit 1
+          fi
+
+          echo "Ownership verified, updating labels..."
+          kubectl label namespace "$NAMESPACE" \
+            k8s-ee/commit-sha="$COMMIT_SHA" \
+            k8s-ee/branch="$BRANCH_NAME" \
+            --overwrite
+          kubectl annotate namespace "$NAMESPACE" \
+            k8s-ee/last-updated="$CREATED_AT" \
+            k8s-ee/repository="$REPOSITORY" \
+            --overwrite
+
+          echo "created=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "Creating namespace $NAMESPACE..."
+
+          # Create namespace with embedded template
+          cat <<EOF | kubectl apply --timeout=60s -f -
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: ${NAMESPACE}
+          labels:
+            app.kubernetes.io/managed-by: github-actions
+            k8s-ee/type: ephemeral
+            k8s-ee/project-id: "${PROJECT_ID}"
+            k8s-ee/pr-number: "${PR_NUMBER}"
+            k8s-ee/branch: "${BRANCH_NAME}"
+            k8s-ee/commit-sha: "${COMMIT_SHA}"
+          annotations:
+            k8s-ee/created-at: "${CREATED_AT}"
+            k8s-ee/created-by: "pr-environment-workflow"
+            k8s-ee/repository: "${REPOSITORY}"
+            k8s-ee/last-updated: "${CREATED_AT}"
+        EOF
+
+          echo "created=true" >> "$GITHUB_OUTPUT"
+        fi
+
+        echo "namespace=$NAMESPACE" >> "$GITHUB_OUTPUT"
+
+    - name: Apply ResourceQuota
+      shell: bash
+      env:
+        NAMESPACE: ${{ inputs.namespace }}
+        PROJECT_ID: ${{ inputs.project-id }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+      run: |
+        set -euo pipefail
+        echo "Applying ResourceQuota to $NAMESPACE..."
+
+        cat <<EOF | kubectl apply --timeout=60s -f -
+        apiVersion: v1
+        kind: ResourceQuota
+        metadata:
+          name: pr-quota
+          namespace: ${NAMESPACE}
+          labels:
+            app.kubernetes.io/managed-by: github-actions
+            k8s-ee/type: ephemeral
+            k8s-ee/project-id: "${PROJECT_ID}"
+            k8s-ee/pr-number: "${PR_NUMBER}"
+        spec:
+          hard:
+            requests.cpu: "500m"
+            requests.memory: 1Gi
+            limits.cpu: "1"
+            limits.memory: 2Gi
+            requests.storage: 5Gi
+            persistentvolumeclaims: "3"
+            pods: "10"
+            services: "5"
+            configmaps: "10"
+            secrets: "20"
+            replicationcontrollers: "5"
+        EOF
+
+        echo "ResourceQuota applied"
+
+    - name: Apply LimitRange
+      shell: bash
+      env:
+        NAMESPACE: ${{ inputs.namespace }}
+        PROJECT_ID: ${{ inputs.project-id }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+      run: |
+        set -euo pipefail
+        echo "Applying LimitRange to $NAMESPACE..."
+
+        cat <<EOF | kubectl apply --timeout=60s -f -
+        apiVersion: v1
+        kind: LimitRange
+        metadata:
+          name: pr-limits
+          namespace: ${NAMESPACE}
+          labels:
+            app.kubernetes.io/managed-by: github-actions
+            k8s-ee/type: ephemeral
+            k8s-ee/project-id: "${PROJECT_ID}"
+            k8s-ee/pr-number: "${PR_NUMBER}"
+        spec:
+          limits:
+            - type: Container
+              default:
+                cpu: 500m
+                memory: 512Mi
+              defaultRequest:
+                cpu: 100m
+                memory: 128Mi
+              max:
+                cpu: "1"
+                memory: 1Gi
+              min:
+                cpu: 10m
+                memory: 32Mi
+            - type: Pod
+              max:
+                cpu: "2"
+                memory: 2Gi
+            - type: PersistentVolumeClaim
+              max:
+                storage: 5Gi
+              min:
+                storage: 100Mi
+        EOF
+
+        echo "LimitRange applied"
+
+    - name: Apply NetworkPolicy - Default Deny
+      shell: bash
+      env:
+        NAMESPACE: ${{ inputs.namespace }}
+      run: |
+        set -euo pipefail
+        echo "Applying NetworkPolicy default-deny to $NAMESPACE..."
+
+        cat <<EOF | kubectl apply --timeout=60s -f -
+        apiVersion: networking.k8s.io/v1
+        kind: NetworkPolicy
+        metadata:
+          name: default-deny
+          namespace: ${NAMESPACE}
+          labels:
+            app.kubernetes.io/managed-by: github-actions
+            k8s-ee/type: network-policy
+        spec:
+          podSelector: {}
+          policyTypes:
+            - Ingress
+            - Egress
+        EOF
+
+        echo "NetworkPolicy default-deny applied"
+
+    - name: Apply NetworkPolicy - Allow Same Namespace
+      shell: bash
+      env:
+        NAMESPACE: ${{ inputs.namespace }}
+      run: |
+        set -euo pipefail
+        echo "Applying NetworkPolicy allow-same-namespace to $NAMESPACE..."
+
+        cat <<EOF | kubectl apply --timeout=60s -f -
+        apiVersion: networking.k8s.io/v1
+        kind: NetworkPolicy
+        metadata:
+          name: allow-same-namespace
+          namespace: ${NAMESPACE}
+          labels:
+            app.kubernetes.io/managed-by: github-actions
+            k8s-ee/type: network-policy
+        spec:
+          podSelector: {}
+          ingress:
+            - from:
+                - podSelector: {}
+          policyTypes:
+            - Ingress
+        EOF
+
+        echo "NetworkPolicy allow-same-namespace applied"
+
+    - name: Apply NetworkPolicy - Allow Ingress Controller
+      shell: bash
+      env:
+        NAMESPACE: ${{ inputs.namespace }}
+      run: |
+        set -euo pipefail
+        echo "Applying NetworkPolicy allow-ingress-controller to $NAMESPACE..."
+
+        cat <<EOF | kubectl apply --timeout=60s -f -
+        apiVersion: networking.k8s.io/v1
+        kind: NetworkPolicy
+        metadata:
+          name: allow-ingress-controller
+          namespace: ${NAMESPACE}
+          labels:
+            app.kubernetes.io/managed-by: github-actions
+            k8s-ee/type: network-policy
+        spec:
+          podSelector: {}
+          ingress:
+            - from:
+                - namespaceSelector:
+                    matchLabels:
+                      kubernetes.io/metadata.name: kube-system
+                  podSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: traefik
+              ports:
+                - protocol: TCP
+                  port: 3000
+          policyTypes:
+            - Ingress
+        EOF
+
+        echo "NetworkPolicy allow-ingress-controller applied"
+
+    - name: Apply NetworkPolicy - Allow Observability
+      shell: bash
+      env:
+        NAMESPACE: ${{ inputs.namespace }}
+      run: |
+        set -euo pipefail
+        echo "Applying NetworkPolicy allow-observability to $NAMESPACE..."
+
+        cat <<EOF | kubectl apply --timeout=60s -f -
+        apiVersion: networking.k8s.io/v1
+        kind: NetworkPolicy
+        metadata:
+          name: allow-observability
+          namespace: ${NAMESPACE}
+          labels:
+            app.kubernetes.io/managed-by: github-actions
+            k8s-ee/type: network-policy
+        spec:
+          podSelector: {}
+          ingress:
+            - from:
+                - namespaceSelector:
+                    matchLabels:
+                      kubernetes.io/metadata.name: observability
+                  podSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: prometheus
+          policyTypes:
+            - Ingress
+        EOF
+
+        echo "NetworkPolicy allow-observability applied"
+
+    - name: Apply NetworkPolicy - Allow Egress
+      shell: bash
+      env:
+        NAMESPACE: ${{ inputs.namespace }}
+        K8S_API_IP: ${{ inputs.k8s-api-ip }}
+      run: |
+        set -euo pipefail
+        echo "Applying NetworkPolicy allow-egress to $NAMESPACE..."
+
+        cat <<EOF | kubectl apply --timeout=60s -f -
+        apiVersion: networking.k8s.io/v1
+        kind: NetworkPolicy
+        metadata:
+          name: allow-egress
+          namespace: ${NAMESPACE}
+          labels:
+            app.kubernetes.io/managed-by: github-actions
+            k8s-ee/type: network-policy
+        spec:
+          podSelector: {}
+          egress:
+            # Allow egress to pods in the same namespace (app -> database)
+            - to:
+                - podSelector: {}
+            # Allow DNS queries to kube-system (CoreDNS)
+            - to:
+                - namespaceSelector:
+                    matchLabels:
+                      kubernetes.io/metadata.name: kube-system
+              ports:
+                - protocol: UDP
+                  port: 53
+                - protocol: TCP
+                  port: 53
+            # Allow access to Kubernetes API server
+            - to:
+                - ipBlock:
+                    cidr: ${K8S_API_IP}/32
+              ports:
+                - protocol: TCP
+                  port: 6443
+            # Allow all external (non-cluster) traffic
+            - to:
+                - ipBlock:
+                    cidr: 0.0.0.0/0
+                    except:
+                      - 10.0.0.0/8
+                      - 172.16.0.0/12
+                      - 192.168.0.0/16
+          policyTypes:
+            - Egress
+        EOF
+
+        echo "NetworkPolicy allow-egress applied"
+
+    - name: Verify namespace setup
+      shell: bash
+      env:
+        NAMESPACE: ${{ inputs.namespace }}
+      run: |
+        set -euo pipefail
+
+        echo "=== Namespace Details ==="
+        kubectl get namespace "$NAMESPACE" -o yaml | head -30
+
+        echo ""
+        echo "=== ResourceQuota ==="
+        kubectl get resourcequota -n "$NAMESPACE"
+
+        echo ""
+        echo "=== LimitRange ==="
+        kubectl get limitrange -n "$NAMESPACE"
+
+        echo ""
+        echo "=== NetworkPolicies ==="
+        kubectl get networkpolicy -n "$NAMESPACE"
+
+        echo ""
+        echo "Namespace setup complete!"
