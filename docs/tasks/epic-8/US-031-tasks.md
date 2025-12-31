@@ -1,10 +1,10 @@
 # Tasks for US-031: Create Reusable Workflow
 
-**Status:** Draft
+**Status:** Done
 
 ## Tasks
 
-### T-031.1: Create Workflow Structure
+### T-031.1: Create Workflow Structure ✅
 - **Description:** Create reusable workflow with workflow_call trigger
 - **Acceptance Criteria:**
   - `on: workflow_call` trigger configured
@@ -15,7 +15,7 @@
 - **Estimate:** S
 - **Files:** `.github/workflows/pr-environment-reusable.yml`
 
-### T-031.2: Create validate-config Job
+### T-031.2: Create validate-config Job ✅
 - **Description:** Create job to parse and validate configuration
 - **Acceptance Criteria:**
   - Runs on ubuntu-latest (lightweight)
@@ -25,7 +25,7 @@
 - **Estimate:** S
 - **Files:** `.github/workflows/pr-environment-reusable.yml`
 
-### T-031.3: Create create-namespace Job
+### T-031.3: Create create-namespace Job ✅
 - **Description:** Create job to set up PR namespace
 - **Acceptance Criteria:**
   - Runs on arc-runner-set (in-cluster)
@@ -35,7 +35,7 @@
 - **Estimate:** S
 - **Files:** `.github/workflows/pr-environment-reusable.yml`
 
-### T-031.4: Create build-image Job
+### T-031.4: Create build-image Job ✅
 - **Description:** Create job to build and push container image
 - **Acceptance Criteria:**
   - Runs on ubuntu-latest (for GHCR access)
@@ -46,7 +46,7 @@
 - **Estimate:** S
 - **Files:** `.github/workflows/pr-environment-reusable.yml`
 
-### T-031.5: Create deploy Job
+### T-031.5: Create deploy Job ✅
 - **Description:** Create job to deploy application
 - **Acceptance Criteria:**
   - Runs on arc-runner-set (in-cluster)
@@ -57,7 +57,7 @@
 - **Estimate:** M
 - **Files:** `.github/workflows/pr-environment-reusable.yml`
 
-### T-031.6: Create destroy Job
+### T-031.6: Create destroy Job ✅
 - **Description:** Create job to destroy namespace on PR close
 - **Acceptance Criteria:**
   - Runs on arc-runner-set (in-cluster)
@@ -68,7 +68,7 @@
 - **Estimate:** S
 - **Files:** `.github/workflows/pr-environment-reusable.yml`
 
-### T-031.7: Create Client Workflow Template
+### T-031.7: Create Client Workflow Template ✅
 - **Description:** Create minimal boilerplate workflow for client repos
 - **Acceptance Criteria:**
   - ~10 lines of YAML

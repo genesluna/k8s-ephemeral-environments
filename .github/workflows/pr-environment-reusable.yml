@@ -1,0 +1,406 @@
+name: PR Environment (Reusable)
+
+# Reusable workflow for PR environments
+# External repositories call this workflow to deploy preview environments
+# See: docs/user-stories/epic-8-simplified-onboarding/US-031-reusable-workflow.md
+
+on:
+  workflow_call:
+    inputs:
+      pr-number:
+        description: 'Pull request number'
+        required: true
+        type: number
+      pr-action:
+        description: 'PR event action (opened, reopened, synchronize, closed)'
+        required: true
+        type: string
+      head-sha:
+        description: 'Full commit SHA (40 characters)'
+        required: true
+        type: string
+      head-ref:
+        description: 'Branch name'
+        required: true
+        type: string
+      repository:
+        description: 'GitHub repository (owner/repo)'
+        required: true
+        type: string
+      config-path:
+        description: 'Path to k8s-ee.yaml configuration file'
+        required: false
+        type: string
+        default: 'k8s-ee.yaml'
+      preview-domain:
+        description: 'Base domain for preview URLs'
+        required: false
+        type: string
+        default: 'k8s-ee.genesluna.dev'
+      kubectl-version:
+        description: 'kubectl version'
+        required: false
+        type: string
+        default: 'v1.31.0'
+      helm-version:
+        description: 'Helm version'
+        required: false
+        type: string
+        default: 'v3.16.0'
+      k8s-api-ip:
+        description: 'Kubernetes API server IP for NetworkPolicy egress'
+        required: false
+        type: string
+        default: '10.0.0.39'
+      chart-version:
+        description: 'k8s-ee-app chart version'
+        required: false
+        type: string
+        default: '1.0.0'
+
+# Prevent concurrent runs for the same PR
+concurrency:
+  group: pr-env-${{ inputs.repository }}-${{ inputs.pr-number }}
+  cancel-in-progress: false
+
+# Workflow-level environment variables
+env:
+  # Repository containing reusable actions and Helm charts
+  # Update this if repository ownership or name changes
+  K8S_EE_REPO: genesluna/k8s-ephemeral-environments
+
+# Checkout Strategy:
+# - Jobs that need BOTH calling repo and k8s-ee actions (validate-config, build-image):
+#   Checkout calling repo to root, k8s-ee to _k8s-ee/ path, use ./_k8s-ee/.github/actions/
+# - Jobs that ONLY need k8s-ee actions (create-namespace, deploy-app, destroy-namespace, pr-comment):
+#   Checkout k8s-ee to root, use ./.github/actions/
+
+jobs:
+  # ============================================================================
+  # VALIDATE CONFIG
+  # Runs on: ubuntu-latest (lightweight, fast startup)
+  # Purpose: Parse and validate k8s-ee.yaml, extract config for downstream jobs
+  # ============================================================================
+  validate-config:
+    name: Validate Config
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    permissions:
+      contents: read
+
+    outputs:
+      project-id: ${{ steps.validate.outputs.project-id }}
+      namespace: ${{ steps.validate.outputs.namespace }}
+      preview-url: ${{ steps.validate.outputs.preview-url }}
+      config-json: ${{ steps.validate.outputs.config-json }}
+      app-port: ${{ steps.validate.outputs.app-port }}
+      health-path: ${{ steps.validate.outputs.health-path }}
+      image-context: ${{ steps.validate.outputs.image-context }}
+      image-dockerfile: ${{ steps.validate.outputs.image-dockerfile }}
+
+    steps:
+      - name: Checkout calling repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.head-sha }}
+
+      - name: Checkout k8s-ee for action
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ env.K8S_EE_REPO }}
+          path: _k8s-ee
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+
+      - name: Validate configuration
+        id: validate
+        uses: ./_k8s-ee/.github/actions/validate-config
+        with:
+          config-path: ${{ inputs.config-path }}
+          pr-number: ${{ inputs.pr-number }}
+          repository: ${{ inputs.repository }}
+          preview-domain: ${{ inputs.preview-domain }}
+
+  # ============================================================================
+  # CREATE NAMESPACE
+  # Runs on: arc-runner-set (in-cluster, has kubectl access)
+  # Condition: PR not closed
+  # Depends on: validate-config
+  # ============================================================================
+  create-namespace:
+    name: Create Namespace
+    if: inputs.pr-action != 'closed'
+    needs: validate-config
+    runs-on: arc-runner-set
+    timeout-minutes: 5
+
+    permissions:
+      contents: read
+
+    outputs:
+      created: ${{ steps.create.outputs.created }}
+      namespace: ${{ steps.create.outputs.namespace }}
+
+    steps:
+      - name: Checkout k8s-ee for actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ env.K8S_EE_REPO }}
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+
+      - name: Setup tools
+        uses: ./.github/actions/setup-tools
+        with:
+          kubectl-version: ${{ inputs.kubectl-version }}
+          install-helm: 'false'
+
+      - name: Create namespace
+        id: create
+        uses: ./.github/actions/create-namespace
+        with:
+          namespace: ${{ needs.validate-config.outputs.namespace }}
+          project-id: ${{ needs.validate-config.outputs.project-id }}
+          pr-number: ${{ inputs.pr-number }}
+          branch-name: ${{ inputs.head-ref }}
+          commit-sha: ${{ inputs.head-sha }}
+          repository: ${{ inputs.repository }}
+          k8s-api-ip: ${{ inputs.k8s-api-ip }}
+
+  # ============================================================================
+  # BUILD IMAGE
+  # Runs on: ubuntu-latest (has Docker, GHCR access)
+  # Condition: PR not closed
+  # Depends on: validate-config (parallel with create-namespace)
+  # ============================================================================
+  build-image:
+    name: Build Image
+    if: inputs.pr-action != 'closed'
+    needs: validate-config
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+
+    outputs:
+      image-tag: ${{ steps.build.outputs.image-tag }}
+      image-digest: ${{ steps.build.outputs.image-digest }}
+      image-ref: ${{ steps.build.outputs.image-ref }}
+
+    steps:
+      # First checkout: calling repo for Dockerfile
+      - name: Checkout calling repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.head-sha }}
+
+      # Second checkout: k8s-ee repo for action (to separate path)
+      - name: Checkout k8s-ee for action
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ env.K8S_EE_REPO }}
+          path: _k8s-ee
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+
+      - name: Build and push image
+        id: build
+        uses: ./_k8s-ee/.github/actions/build-image
+        with:
+          context: ${{ needs.validate-config.outputs.image-context }}
+          dockerfile: ${{ needs.validate-config.outputs.image-dockerfile }}
+          image-name: ${{ inputs.repository }}/${{ needs.validate-config.outputs.project-id }}
+          pr-number: ${{ inputs.pr-number }}
+          commit-sha: ${{ inputs.head-sha }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ============================================================================
+  # DEPLOY APP
+  # Runs on: arc-runner-set (in-cluster, has kubectl/helm access)
+  # Condition: PR not closed
+  # Depends on: validate-config, create-namespace, build-image
+  # ============================================================================
+  deploy-app:
+    name: Deploy App
+    if: inputs.pr-action != 'closed'
+    needs: [validate-config, create-namespace, build-image]
+    runs-on: arc-runner-set
+    timeout-minutes: 10
+
+    permissions:
+      contents: read
+
+    outputs:
+      preview-url: ${{ steps.deploy.outputs.preview-url }}
+      release-status: ${{ steps.deploy.outputs.release-status }}
+
+    steps:
+      - name: Checkout k8s-ee for actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ env.K8S_EE_REPO }}
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+
+      - name: Setup tools
+        uses: ./.github/actions/setup-tools
+        with:
+          kubectl-version: ${{ inputs.kubectl-version }}
+          helm-version: ${{ inputs.helm-version }}
+
+      - name: Deploy application
+        id: deploy
+        uses: ./.github/actions/deploy-app
+        with:
+          namespace: ${{ needs.validate-config.outputs.namespace }}
+          project-id: ${{ needs.validate-config.outputs.project-id }}
+          pr-number: ${{ inputs.pr-number }}
+          image-repository: ghcr.io/${{ inputs.repository }}/${{ needs.validate-config.outputs.project-id }}
+          image-tag: ${{ needs.build-image.outputs.image-tag }}
+          image-digest: ${{ needs.build-image.outputs.image-digest }}
+          commit-sha: ${{ inputs.head-sha }}
+          branch-name: ${{ inputs.head-ref }}
+          preview-domain: ${{ inputs.preview-domain }}
+          chart-version: ${{ inputs.chart-version }}
+          app-port: ${{ needs.validate-config.outputs.app-port }}
+          health-path: ${{ needs.validate-config.outputs.health-path }}
+
+  # ============================================================================
+  # PR COMMENT (DEPLOY)
+  # Runs on: ubuntu-latest
+  # Condition: Always after deploy-app (success or failure)
+  # Posts deployment status to PR
+  # ============================================================================
+  pr-comment-deploy:
+    name: PR Comment (Deploy)
+    if: always() && inputs.pr-action != 'closed' && needs.validate-config.result == 'success'
+    needs: [validate-config, build-image, deploy-app]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Checkout k8s-ee for action
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ env.K8S_EE_REPO }}
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+
+      - name: Comment on PR (success)
+        if: needs.deploy-app.result == 'success'
+        uses: ./.github/actions/pr-comment
+        with:
+          status: deployed
+          preview-url: ${{ needs.deploy-app.outputs.preview-url }}
+          namespace: ${{ needs.validate-config.outputs.namespace }}
+          commit-sha: ${{ inputs.head-sha }}
+          branch-name: ${{ inputs.head-ref }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          pr-number: ${{ inputs.pr-number }}
+
+      - name: Comment on PR (failure)
+        if: needs.deploy-app.result != 'success'
+        uses: ./.github/actions/pr-comment
+        with:
+          status: failed
+          namespace: ${{ needs.validate-config.outputs.namespace }}
+          commit-sha: ${{ inputs.head-sha }}
+          branch-name: ${{ inputs.head-ref }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          pr-number: ${{ inputs.pr-number }}
+
+  # ============================================================================
+  # DESTROY NAMESPACE
+  # Runs on: arc-runner-set (in-cluster, has kubectl access)
+  # Condition: PR closed
+  # Depends on: validate-config only
+  # ============================================================================
+  destroy-namespace:
+    name: Destroy Namespace
+    if: inputs.pr-action == 'closed'
+    needs: validate-config
+    runs-on: arc-runner-set
+    timeout-minutes: 5
+
+    permissions:
+      contents: read
+
+    outputs:
+      deleted: ${{ steps.destroy.outputs.deleted }}
+      preserved: ${{ steps.destroy.outputs.preserved }}
+
+    steps:
+      - name: Checkout k8s-ee for actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ env.K8S_EE_REPO }}
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+
+      - name: Setup tools
+        uses: ./.github/actions/setup-tools
+        with:
+          kubectl-version: ${{ inputs.kubectl-version }}
+          install-helm: 'false'
+
+      - name: Destroy namespace
+        id: destroy
+        uses: ./.github/actions/destroy-namespace
+        with:
+          namespace: ${{ needs.validate-config.outputs.namespace }}
+          repository: ${{ inputs.repository }}
+
+  # ============================================================================
+  # PR COMMENT (DESTROY)
+  # Runs on: ubuntu-latest
+  # Condition: Always after destroy-namespace
+  # Posts destroy/preserved status to PR
+  # ============================================================================
+  pr-comment-destroy:
+    name: PR Comment (Destroy)
+    if: always() && inputs.pr-action == 'closed' && needs.validate-config.result == 'success'
+    needs: [validate-config, destroy-namespace]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Checkout k8s-ee for action
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ env.K8S_EE_REPO }}
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+
+      - name: Comment on PR (destroyed)
+        if: needs.destroy-namespace.outputs.preserved != 'true'
+        uses: ./.github/actions/pr-comment
+        with:
+          status: destroyed
+          namespace: ${{ needs.validate-config.outputs.namespace }}
+          commit-sha: ${{ inputs.head-sha }}
+          branch-name: ${{ inputs.head-ref }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          pr-number: ${{ inputs.pr-number }}
+
+      - name: Comment on PR (preserved)
+        if: needs.destroy-namespace.outputs.preserved == 'true'
+        uses: ./.github/actions/pr-comment
+        with:
+          status: preserved
+          namespace: ${{ needs.validate-config.outputs.namespace }}
+          commit-sha: ${{ inputs.head-sha }}
+          branch-name: ${{ inputs.head-ref }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          pr-number: ${{ inputs.pr-number }}

@@ -2,6 +2,92 @@
 
 This guide explains how to configure a new or existing repository to use the PR ephemeral environment system.
 
+## Quick Start: Reusable Workflow (Recommended)
+
+The fastest way to onboard is using the reusable workflow. Just add two files to your repository:
+
+### 1. Configuration File (`k8s-ee.yaml`)
+
+```yaml
+# k8s-ee.yaml - minimal configuration
+projectId: myapp  # Unique ID, max 20 chars, lowercase alphanumeric + hyphens
+
+# Optional: customize app settings
+app:
+  port: 3000
+  healthPath: /health
+
+# Optional: enable databases
+databases:
+  postgresql: true
+  # mongodb: false
+  # redis: false
+  # minio: false
+  # mariadb: false
+```
+
+### 2. Workflow File (`.github/workflows/pr-environment.yml`)
+
+```yaml
+name: PR Environment
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+jobs:
+  pr-environment:
+    uses: genesluna/k8s-ephemeral-environments/.github/workflows/pr-environment-reusable.yml@main
+    with:
+      pr-number: ${{ github.event.pull_request.number }}
+      pr-action: ${{ github.event.action }}
+      head-sha: ${{ github.event.pull_request.head.sha }}
+      head-ref: ${{ github.head_ref }}
+      repository: ${{ github.repository }}
+    secrets: inherit
+```
+
+**That's it!** The reusable workflow handles:
+- Configuration validation
+- Namespace creation with quotas and network policies
+- ARM64 image building and pushing to GHCR
+- Trivy vulnerability scanning
+- Helm deployment with health checks
+- PR comments with preview URLs
+- Cleanup on PR close
+
+### Optional Workflow Inputs
+
+```yaml
+with:
+  pr-number: ${{ github.event.pull_request.number }}
+  pr-action: ${{ github.event.action }}
+  head-sha: ${{ github.event.pull_request.head.sha }}
+  head-ref: ${{ github.head_ref }}
+  repository: ${{ github.repository }}
+  config-path: 'k8s-ee.yaml'           # Path to config file
+  preview-domain: 'k8s-ee.genesluna.dev'  # Base domain
+  chart-version: '1.0.0'               # k8s-ee-app chart version
+```
+
+### Version Pinning
+
+For production stability, pin to a specific version:
+
+```yaml
+# Pin to a release tag
+uses: genesluna/k8s-ephemeral-environments/.github/workflows/pr-environment-reusable.yml@v1
+
+# Pin to a specific commit
+uses: genesluna/k8s-ephemeral-environments/.github/workflows/pr-environment-reusable.yml@abc1234
+```
+
+---
+
+## Manual Setup (Advanced)
+
+If you need more control, you can set up the workflow manually. The following sections cover the detailed approach.
+
 ## Prerequisites (Already Set Up)
 
 The following infrastructure is already running on the VPS cluster:
