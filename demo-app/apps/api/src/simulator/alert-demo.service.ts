@@ -19,19 +19,23 @@ interface AlertConfig {
   description: string;
 }
 
+// Duration for alert demos: rate[5m] window + for:5m threshold + buffer
+// Alerts require ~10 minutes to fire (5m rate calculation + 5m pending duration)
+const ALERT_DURATION_MS = 10 * 60 * 1000 + 30 * 1000; // 10.5 minutes
+
 const ALERT_CONFIGS: Record<AlertType, AlertConfig> = {
   'high-error-rate': {
-    durationMs: 5 * 60 * 1000 + 30 * 1000, // 5.5 minutes (buffer for alert to fire)
+    durationMs: ALERT_DURATION_MS,
     intervalMs: 500, // Send error every 500ms
     description: 'Generates 5xx errors to trigger APIHighErrorRate alert',
   },
   'high-latency': {
-    durationMs: 5 * 60 * 1000 + 30 * 1000,
+    durationMs: ALERT_DURATION_MS,
     intervalMs: 2000, // Send slow request every 2s
     description: 'Generates slow responses to trigger APIHighLatency alert',
   },
   'slow-database': {
-    durationMs: 5 * 60 * 1000 + 30 * 1000,
+    durationMs: ALERT_DURATION_MS,
     intervalMs: 3000, // Run heavy query every 3s
     description: 'Runs heavy database queries to trigger DatabaseQuerySlow alert',
   },
@@ -133,22 +137,21 @@ export class AlertDemoService implements OnModuleDestroy {
    * Start an alert demo
    */
   async start(alertType: AlertType): Promise<AlertDemoStatus> {
-    // Mutex: prevent concurrent start calls
+    // Mutex: prevent concurrent start calls - set flag immediately after checks
+    // to minimize window for race conditions in single-threaded Node.js
     if (this.starting) {
       throw new Error('Another start operation is in progress');
     }
-
     if (this.running) {
       throw new Error(`Alert demo already running: ${this.currentAlertType}`);
     }
+    this.starting = true;
 
     const config = ALERT_CONFIGS[alertType];
     if (!config) {
+      this.starting = false;
       throw new Error(`Unknown alert type: ${alertType}`);
     }
-
-    // Set mutex flag
-    this.starting = true;
 
     try {
       this.logger.log({

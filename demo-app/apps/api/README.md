@@ -151,15 +151,15 @@ Returns available alert types.
   "alertTypes": {
     "high-error-rate": {
       "description": "Generates 5xx errors to trigger APIHighErrorRate alert",
-      "durationMinutes": 6
+      "durationMinutes": 11
     },
     "high-latency": {
       "description": "Generates slow responses to trigger APIHighLatency alert",
-      "durationMinutes": 6
+      "durationMinutes": 11
     },
     "slow-database": {
       "description": "Runs heavy database queries to trigger DatabaseQuerySlow alert",
-      "durationMinutes": 6
+      "durationMinutes": 11
     }
   },
   "timestamp": "2025-01-01T00:00:00.000Z"
@@ -176,10 +176,10 @@ Returns current alert demo status.
   "running": true,
   "alertType": "high-error-rate",
   "startedAt": "2025-01-01T00:00:00.000Z",
-  "endsAt": "2025-01-01T00:05:30.000Z",
-  "remainingSeconds": 300,
-  "requestsSent": 120,
-  "progress": 45,
+  "endsAt": "2025-01-01T00:10:30.000Z",
+  "remainingSeconds": 480,
+  "requestsSent": 300,
+  "progress": 25,
   "timestamp": "2025-01-01T00:02:30.000Z"
 }
 ```
