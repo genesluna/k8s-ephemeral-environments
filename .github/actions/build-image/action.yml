@@ -79,6 +79,18 @@ runs:
           exit 1
         fi
 
+        # Validate dockerfile path (no path traversal or absolute paths)
+        if [[ "$DOCKERFILE" =~ \.\. ]]; then
+          echo "ERROR: dockerfile path cannot contain '..'"
+          echo "Received: '$DOCKERFILE'"
+          exit 1
+        fi
+        if [[ "$DOCKERFILE" =~ ^/ ]]; then
+          echo "ERROR: dockerfile path cannot be absolute"
+          echo "Received: '$DOCKERFILE'"
+          exit 1
+        fi
+
         # Validate PR number is numeric
         if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
           echo "ERROR: pr-number must be numeric"

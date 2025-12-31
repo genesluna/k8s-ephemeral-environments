@@ -147,9 +147,14 @@ runs:
           exit 1
         fi
 
-        # Validate app-port is numeric
+        # Validate app-port is numeric and in valid range
         if ! [[ "$APP_PORT" =~ ^[0-9]+$ ]]; then
           echo "ERROR: app-port must be numeric"
+          echo "Received: '$APP_PORT'"
+          exit 1
+        fi
+        if [ "$APP_PORT" -lt 1 ] || [ "$APP_PORT" -gt 65535 ]; then
+          echo "ERROR: app-port must be between 1 and 65535"
           echo "Received: '$APP_PORT'"
           exit 1
         fi
