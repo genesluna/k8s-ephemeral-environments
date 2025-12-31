@@ -626,10 +626,24 @@ The alert demo makes **actual HTTP requests** to the simulator endpoints to gene
 
 | Cause | Solution |
 |-------|----------|
+| PrometheusRule not applied | Apply `kubectl apply -f k8s/observability/custom-alerts.yaml` |
 | Prometheus not scraping | Check ServiceMonitor and targets in Prometheus UI |
 | Metrics not recorded | Verify HTTP requests are going through middleware |
 | Alert rules disabled | Check PrometheusRule CRD exists |
 | Network policy blocking | Verify observability namespace can reach app |
+
+**First Troubleshooting Step - Verify PrometheusRule:**
+```bash
+# Check if custom alerts are applied
+kubectl get prometheusrule -n observability custom-alerts
+
+# If not found, apply them
+kubectl apply -f k8s/observability/custom-alerts.yaml
+
+# Verify all 15 alerts are loaded
+kubectl get prometheusrule -n observability custom-alerts \
+  -o jsonpath='{.spec.groups[0].rules[*].alert}' | tr ' ' '\n'
+```
 
 **Verify Metrics are Being Recorded:**
 ```bash
@@ -660,3 +674,4 @@ kubectl port-forward -n observability svc/prometheus-kube-prometheus-alertmanage
 - [Cluster Recovery Runbook](../runbooks/cluster-recovery.md)
 - [Network Policies Runbook](../runbooks/network-policies.md)
 - [Database Operators Runbook](../runbooks/database-operators.md)
+- [Custom Alerts Guide](../../k8s/observability/custom-alerts-README.md)
