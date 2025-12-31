@@ -11,6 +11,7 @@ This guide helps diagnose and resolve common issues with PR environments.
 - [Network Policy Issues](#network-policy-issues)
 - [Health Check Failures](#health-check-failures)
 - [Common kubectl Commands](#common-kubectl-commands)
+- [Metrics Issues](#metrics-issues)
 - [Alert Demo Issues](#alert-demo-issues)
 
 ## Quick Diagnosis
@@ -486,6 +487,96 @@ kubectl get ingress -n $NS
 echo "=== Recent Events ==="
 kubectl get events -n $NS --sort-by='.lastTimestamp' | tail -10
 ```
+
+## Metrics Issues
+
+### Metrics Not Appearing in Prometheus
+
+**Symptoms:**
+- Dashboard panels show "No Data"
+- Prometheus queries return empty results
+- ServiceMonitor exists but metrics missing
+
+**Diagnosis:**
+```bash
+# Check ServiceMonitor exists
+kubectl get servicemonitor -n k8s-ee-pr-{number}
+
+# Check Prometheus target status
+kubectl port-forward -n observability svc/prometheus-kube-prometheus-prometheus 9090:9090
+# Visit localhost:9090/targets and look for your namespace
+
+# Check if app is exposing metrics
+curl https://k8s-ee-pr-{number}.k8s-ee.genesluna.dev/metrics
+```
+
+**Common Causes:**
+
+| Cause | Solution |
+|-------|----------|
+| ServiceMonitor missing label | Ensure `release: prometheus` label exists |
+| App not exposing /metrics | Check MetricsModule is imported in app.module.ts |
+| Port mismatch | ServiceMonitor port must match service port name |
+| Network policy blocking | Verify observability namespace can reach app |
+
+### High Cardinality Metrics
+
+**Symptoms:**
+- Prometheus memory usage increasing
+- Queries becoming slow
+- "cardinality" warnings in Prometheus logs
+
+**Diagnosis:**
+```bash
+# Check cardinality by metric
+kubectl exec -n observability prometheus-prometheus-prometheus-0 -- \
+  wget -qO- 'http://localhost:9090/api/v1/query?query=count by (__name__)({__name__=~".+"})' | \
+  grep -o '"__name__":"[^"]*"' | sort | uniq -c | sort -rn | head -20
+```
+
+**Common Causes:**
+
+| Cause | Solution |
+|-------|----------|
+| Unique IDs in route labels | Middleware normalizes paths: `/status/500` → `/status/:code` |
+| Static asset paths | Static assets (`/assets/*`) are excluded from metrics |
+| UUID paths | UUIDs normalized to `:uuid` placeholder |
+
+**How Route Normalization Works:**
+
+The metrics middleware automatically normalizes paths to prevent high cardinality:
+
+| Original Path | Normalized Path |
+|---------------|-----------------|
+| `/api/simulator/status/500` | `/api/simulator/status/:code` |
+| `/api/simulator/latency/slow` | `/api/simulator/latency/:preset` |
+| `/api/db-test/heavy-query/medium` | `/api/db-test/heavy-query/:intensity` |
+| `/user/123` | `/user/:id` |
+| `/item/550e8400-e29b-...` | `/item/:uuid` |
+| `/assets/index-D4IGy2yB.css` | *(excluded from metrics)* |
+
+### Dashboard Namespace Dropdown Empty
+
+**Symptoms:**
+- Namespace dropdown shows no options
+- Dashboard panels all show "No Data"
+
+**Diagnosis:**
+```bash
+# Test the namespace variable query
+kubectl exec -n observability prometheus-prometheus-prometheus-0 -- \
+  wget -qO- 'http://localhost:9090/api/v1/query?query=kube_namespace_status_phase{namespace=~".*-pr-.*",phase="Active"}'
+```
+
+**Common Causes:**
+
+| Cause | Solution |
+|-------|----------|
+| No PR environments exist | Create a PR to generate a namespace |
+| Variable uses wrong metric | Use `kube_namespace_status_phase`, not `http_requests_total` |
+| kube-state-metrics down | Check kube-state-metrics pod is running |
+
+**Best Practice:** Dashboards should use `kube_namespace_status_phase` for namespace variables since it's always available from kube-state-metrics, even when no application metrics exist yet.
 
 ## Alert Demo Issues
 

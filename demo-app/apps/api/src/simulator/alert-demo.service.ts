@@ -54,12 +54,31 @@ const MAX_PENDING_OPERATIONS = 10;
 // Request timeout in milliseconds (30s covers slow latency/database operations)
 const REQUEST_TIMEOUT_MS = 30000;
 
+// Default port for API server
+const DEFAULT_PORT = 3000;
+
+/**
+ * Parse and validate the PORT environment variable.
+ * Returns a valid port number between 1-65535, or the default port.
+ */
+function getValidatedPort(): number {
+  const portStr = process.env.PORT;
+  if (!portStr) {
+    return DEFAULT_PORT;
+  }
+  const port = parseInt(portStr, 10);
+  if (isNaN(port) || port < 1 || port > 65535) {
+    return DEFAULT_PORT;
+  }
+  return port;
+}
+
 @Injectable()
 export class AlertDemoService implements OnModuleDestroy {
   private readonly logger = new Logger(AlertDemoService.name);
   // Uses localhost since the service calls its own API endpoints
   // This works in Kubernetes because the pod's loopback interface is available
-  private readonly baseUrl = `http://localhost:${process.env.PORT || 3000}`;
+  private readonly baseUrl = `http://localhost:${getValidatedPort()}`;
 
   private running = false;
   private starting = false; // Mutex flag for start operation
@@ -252,12 +271,25 @@ export class AlertDemoService implements OnModuleDestroy {
   private executeAlertAction(alertType: AlertType): void {
     switch (alertType) {
       case 'high-error-rate':
-        // Make actual HTTP request to generate 500 error metrics
+        // Skip if too many pending operations to prevent resource exhaustion
+        if (this.pendingOperations >= MAX_PENDING_OPERATIONS) {
+          this.logger.warn('Skipping error simulation - too many pending operations');
+          return;
+        }
+
         this.requestsSent++;
+        this.pendingOperations++;
+
+        // Make actual HTTP request to generate 500 error metrics
         this.fetchWithTimeout(
           `${this.baseUrl}/api/simulator/status/500`,
           'Error rate simulation request failed',
-        );
+        ).finally(() => {
+          // Guard against negative values if stop() resets counter while request is in-flight
+          if (this.pendingOperations > 0) {
+            this.pendingOperations--;
+          }
+        });
         break;
 
       case 'high-latency':
@@ -275,7 +307,10 @@ export class AlertDemoService implements OnModuleDestroy {
           `${this.baseUrl}/api/simulator/latency/slow`,
           'Latency simulation request failed',
         ).finally(() => {
-          this.pendingOperations--;
+          // Guard against negative values if stop() resets counter while request is in-flight
+          if (this.pendingOperations > 0) {
+            this.pendingOperations--;
+          }
         });
         break;
 
@@ -295,7 +330,10 @@ export class AlertDemoService implements OnModuleDestroy {
           'Heavy query request failed',
           'POST',
         ).finally(() => {
-          this.pendingOperations--;
+          // Guard against negative values if stop() resets counter while request is in-flight
+          if (this.pendingOperations > 0) {
+            this.pendingOperations--;
+          }
         });
         break;
     }
