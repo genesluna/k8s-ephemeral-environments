@@ -18,11 +18,15 @@ app:
 
 # Enable databases as needed
 databases:
-  postgresql: true
-  # mongodb: false
-  # redis: false
-  # minio: false
-  # mariadb: false
+  postgresql: true    # Simple enable
+  # Or with bootstrap SQL:
+  # postgresql:
+  #   enabled: true
+  #   bootstrap:
+  #     postInitApplicationSQL:
+  #       - |
+  #         CREATE TABLE users (id SERIAL PRIMARY KEY, name VARCHAR(255));
+  #         GRANT ALL PRIVILEGES ON users TO app;
 ```
 
 **[Full Configuration Reference](./k8s-ee-config-reference.md)** - All available options with examples.

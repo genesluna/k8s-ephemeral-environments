@@ -325,12 +325,30 @@ databases:
     enabled: true
     version: "16"
     storage: 2Gi
+
+# With bootstrap SQL (for table creation)
+databases:
+  postgresql:
+    enabled: true
+    bootstrap:
+      postInitApplicationSQL:
+        - |
+          CREATE TABLE users (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255)
+          );
+          GRANT ALL PRIVILEGES ON users TO app;
+          GRANT USAGE, SELECT ON SEQUENCE users_id_seq TO app;
 ```
 
 Object properties:
 - `enabled`: boolean (default: true)
 - `version`: string (default: "16")
 - `storage`: string (default: "1Gi", pattern: `^[0-9]+(Mi|Gi|Ti)$`)
+- `bootstrap.postInitApplicationSQL`: array of SQL strings to run after database creation
+- `bootstrap.initSQL`: array of SQL strings to run on postgres database (for extensions)
+
+**Important:** Bootstrap SQL runs as `postgres` superuser, but your app connects as `app` user. You must include `GRANT` statements for table access. Use `$func$` instead of `$$` for function delimiters.
 
 #### databases.mongodb
 
