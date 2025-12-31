@@ -44,3 +44,9 @@ CREATE TRIGGER update_test_records_updated_at
   BEFORE UPDATE ON test_records
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
+
+-- Grant permissions to app user
+-- IMPORTANT: Bootstrap SQL runs as postgres superuser, but the app connects as 'app' user.
+-- Without these grants, the app will get "permission denied" errors.
+GRANT ALL PRIVILEGES ON test_records TO app;
+GRANT USAGE, SELECT ON SEQUENCE test_records_id_seq TO app;

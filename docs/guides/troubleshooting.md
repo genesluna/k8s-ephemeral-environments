@@ -290,6 +290,43 @@ kubectl exec -n k8s-ee-pr-{number} -it $(kubectl get pods -n k8s-ee-pr-{number} 
 
 **Note:** For PR environments, simply closing and reopening the PR will recreate the namespace with fresh bootstrap SQL.
 
+### Permission Denied on Tables
+
+**Symptoms:**
+- App logs show `permission denied for table <table_name>`
+- Database operations fail despite table existing
+- CRUD endpoints return 500 errors
+
+**Diagnosis:**
+```bash
+# Check table ownership
+kubectl exec -n k8s-ee-pr-{number} -it $(kubectl get pods -n k8s-ee-pr-{number} \
+  -l cnpg.io/cluster -o name | head -1) -- psql -U postgres -d app -c '\dt'
+
+# Check current grants
+kubectl exec -n k8s-ee-pr-{number} -it $(kubectl get pods -n k8s-ee-pr-{number} \
+  -l cnpg.io/cluster -o name | head -1) -- psql -U postgres -d app -c '\dp test_records'
+```
+
+**Common Causes:**
+
+| Cause | Solution |
+|-------|----------|
+| Missing GRANT statements | Add `GRANT ALL PRIVILEGES ON <table> TO app;` to bootstrap SQL |
+| Missing sequence grants | Add `GRANT USAGE, SELECT ON SEQUENCE <table>_id_seq TO app;` |
+| Table created by postgres user | Bootstrap SQL runs as superuser, app connects as `app` user |
+
+**Resolution:**
+```bash
+# Apply grants manually for immediate fix
+kubectl exec -n k8s-ee-pr-{number} -it $(kubectl get pods -n k8s-ee-pr-{number} \
+  -l cnpg.io/cluster -o name | head -1) -- psql -U postgres -d app -c \
+  "GRANT ALL PRIVILEGES ON test_records TO app; \
+   GRANT USAGE, SELECT ON SEQUENCE test_records_id_seq TO app;"
+```
+
+**Prevention:** Always include GRANT statements in your `postInitApplicationSQL`.
+
 ## Network Policy Issues
 
 ### Traffic Blocked

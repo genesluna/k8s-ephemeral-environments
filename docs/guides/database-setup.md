@@ -286,7 +286,15 @@ postgresql:
       - CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 ```
 
-**Important:** Use named dollar-quote delimiters (`$func$`) instead of `$$` for function bodies - CloudNativePG's template processing consumes `$$`.
+**Important Notes:**
+- Use named dollar-quote delimiters (`$func$`) instead of `$$` for function bodies - CloudNativePG's template processing consumes `$$`.
+- Bootstrap SQL runs as the `postgres` superuser, but your app connects as the `app` user. You must explicitly grant permissions:
+
+```sql
+-- Add at the end of your postInitApplicationSQL
+GRANT ALL PRIVILEGES ON your_table TO app;
+GRANT USAGE, SELECT ON SEQUENCE your_table_id_seq TO app;
+```
 
 See `demo-app/migrations/` for documented SQL reference files.
 

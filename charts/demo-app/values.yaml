@@ -154,6 +154,9 @@ postgresql:
           BEFORE UPDATE ON test_records
           FOR EACH ROW
           EXECUTE FUNCTION update_updated_at_column();
+        -- Grant permissions to app user (bootstrap runs as postgres superuser)
+        GRANT ALL PRIVILEGES ON test_records TO app;
+        GRANT USAGE, SELECT ON SEQUENCE test_records_id_seq TO app;
 
 # MongoDB configuration (uses library chart)
 # Enable for applications requiring MongoDB
