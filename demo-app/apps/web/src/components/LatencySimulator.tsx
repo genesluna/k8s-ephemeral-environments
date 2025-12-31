@@ -3,6 +3,8 @@ import { useGet } from '../hooks/useApi';
 import { ResponseDisplay } from './ResponseDisplay';
 import type { LatencyResponse } from '../types/simulator';
 
+const MAX_TIMEOUT_MS = 10000;
+
 const PRESETS = [
   { id: 'fast', label: 'Fast', range: '0-100ms' },
   { id: 'normal', label: 'Normal', range: '~500ms' },
@@ -28,7 +30,7 @@ export function LatencySimulator() {
 
   const getProgressPercent = () => {
     if (!data?.actualDelay) return 0;
-    return Math.min((data.actualDelay / 10000) * 100, 100);
+    return Math.min((data.actualDelay / MAX_TIMEOUT_MS) * 100, 100);
   };
 
   return (
@@ -48,10 +50,11 @@ export function LatencySimulator() {
       </div>
 
       <div className="custom-latency">
-        <label className="custom-label">Custom Delay</label>
+        <label className="custom-label" htmlFor="custom-delay-slider" id="custom-delay-label">Custom Delay</label>
         <div className="slider-container">
           <input
             type="range"
+            id="custom-delay-slider"
             min="0"
             max="15000"
             step="100"
@@ -59,6 +62,8 @@ export function LatencySimulator() {
             onChange={(e) => setCustomMs(parseInt(e.target.value, 10))}
             className="latency-slider"
             disabled={loading}
+            aria-labelledby="custom-delay-label"
+            aria-valuetext={`${customMs} milliseconds`}
           />
           <span className="slider-value">{customMs}ms</span>
         </div>
@@ -77,7 +82,14 @@ export function LatencySimulator() {
             <span className="result-label">Actual Delay:</span>
             <span className="result-value">{data.actualDelay}ms</span>
           </div>
-          <div className="progress-bar">
+          <div
+            className="progress-bar"
+            role="progressbar"
+            aria-valuenow={data.actualDelay}
+            aria-valuemin={0}
+            aria-valuemax={MAX_TIMEOUT_MS}
+            aria-label={`Latency: ${data.actualDelay}ms of ${MAX_TIMEOUT_MS / 1000}s timeout`}
+          >
             <div
               className="progress-fill"
               style={{ width: `${getProgressPercent()}%` }}

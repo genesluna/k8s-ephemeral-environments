@@ -5,6 +5,7 @@ interface UseApiResult<T> {
   data: T | null;
   loading: boolean;
   error: string | null;
+  status: number | null;
   execute: (url: string, options?: FetchOptions) => Promise<T | null>;
   reset: () => void;
 }
@@ -15,10 +16,16 @@ interface FetchOptions {
   timeout?: number;
 }
 
+export interface FetchResult<T> {
+  data: T;
+  ok: boolean;
+  status: number;
+}
+
 async function fetchApi<T>(
   url: string,
   options: FetchOptions = {},
-): Promise<T> {
+): Promise<FetchResult<T | null>> {
   const { method = 'GET', body, timeout = 30000 } = options;
 
   const controller = new AbortController();
@@ -34,14 +41,26 @@ async function fetchApi<T>(
 
     clearTimeout(timeoutId);
 
-    const data = await response.json();
+    // Handle empty responses (204 No Content, etc.)
+    const contentLength = response.headers.get('content-length');
+    const hasBody = contentLength !== '0' && response.status !== 204;
 
-    if (!response.ok) {
-      const errorData = data as ApiError;
-      throw new Error(errorData.message || errorData.error || `HTTP ${response.status}`);
+    let data: T | null = null;
+    if (hasBody) {
+      try {
+        data = await response.json() as T;
+      } catch {
+        // Response body is not valid JSON - this is OK for some responses
+        data = null;
+      }
     }
 
-    return data as T;
+    // Return both data and status info - let caller decide how to handle non-2xx
+    return {
+      data,
+      ok: response.ok,
+      status: response.status,
+    };
   } catch (err) {
     clearTimeout(timeoutId);
     if (err instanceof Error) {
@@ -58,6 +77,7 @@ export function useApi<T>(): UseApiResult<T> {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<number | null>(null);
   const mountedRef = useRef(true);
 
   // Track mounted state to prevent state updates after unmount
@@ -75,17 +95,32 @@ export function useApi<T>(): UseApiResult<T> {
     ): Promise<T | null> => {
       setLoading(true);
       setError(null);
+      setStatus(null);
 
       try {
         const result = await fetchApi<T>(url, options);
         if (mountedRef.current) {
-          setData(result);
+          // Always set data from response body, even for non-2xx responses
+          // This allows displaying error response bodies (e.g., HTTP status simulator)
+          // Note: For non-2xx responses, both data and error may be set.
+          // data contains the response body, error contains a human-readable message.
+          setData(result.data);
+          setStatus(result.status);
+
+          // Set error message for non-2xx responses (for components that need it)
+          if (!result.ok) {
+            const errorData = result.data as ApiError | null;
+            setError(errorData?.message || errorData?.error || `HTTP ${result.status}`);
+          }
         }
-        return result;
+        return result.data;
       } catch (err) {
+        // Network errors, timeouts, etc. (not HTTP status errors)
         const message = err instanceof Error ? err.message : 'Unknown error';
         if (mountedRef.current) {
           setError(message);
+          setData(null);
+          setStatus(null);
         }
         return null;
       } finally {
@@ -100,10 +135,11 @@ export function useApi<T>(): UseApiResult<T> {
   const reset = useCallback(() => {
     setData(null);
     setError(null);
+    setStatus(null);
     setLoading(false);
   }, []);
 
-  return { data, loading, error, execute, reset };
+  return { data, loading, error, status, execute, reset };
 }
 
 // Convenience hooks for specific HTTP methods

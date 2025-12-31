@@ -26,7 +26,7 @@ const STATUS_CODES = {
 };
 
 export function HttpStatusSimulator() {
-  const { data, loading, error, get } = useGet<StatusResponse>();
+  const { data, loading, error, status, get } = useGet<StatusResponse>();
   const [lastCode, setLastCode] = useState<number | null>(null);
 
   const handleStatusClick = async (code: number) => {
@@ -39,6 +39,10 @@ export function HttpStatusSimulator() {
     if (lastCode >= 200 && lastCode < 300) return 'success';
     return 'error';
   };
+
+  // Network error occurred (timeout, connection failed, etc.)
+  // This is different from intentional HTTP error status codes
+  const isNetworkError = error && status === null;
 
   return (
     <div className="http-status-simulator">
@@ -94,9 +98,9 @@ export function HttpStatusSimulator() {
       </div>
 
       <ResponseDisplay
-        data={data || (error ? { error } : null)}
+        data={data}
         loading={loading}
-        error={null}
+        error={isNetworkError ? error : null}
         variant={getVariant()}
       />
     </div>
