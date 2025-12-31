@@ -198,7 +198,7 @@ Test CPU and memory metrics:
 - **Memory Stress:** Configurable allocation size (up to 256MB) and duration
 
 ### Alert Trigger
-Trigger sustained load to fire Prometheus alerts in Grafana. Each demo runs for ~5.5 minutes to exceed the 5-minute `for` duration required by alert rules:
+Trigger sustained load to fire Prometheus alerts in Grafana. Each demo runs for ~10.5 minutes to allow alerts to transition from "pending" to "firing" (requires rate[5m] + for:5m):
 - **High Error Rate:** Generates 5xx errors at 2 req/s to trigger `APIHighErrorRate` alert
 - **High Latency:** Creates P99 latency >2s to trigger `APIHighLatency` alert
 - **Slow Database:** Executes slow DB queries to trigger `DatabaseQuerySlow` alert

@@ -615,11 +615,12 @@ The alert demo makes **actual HTTP requests** to the simulator endpoints to gene
 |-------|----------|--------------|
 | Start | 0s | Demo begins sending requests |
 | Metrics scraped | 30s | Prometheus collects first data points |
-| Rate calculation | 5m | Prometheus calculates 5-minute rates |
-| Alert fires | 5m 30s | Alert transitions to `firing` state |
-| Demo ends | 5m 30s | Demo stops automatically |
+| Rate calculation | ~2m | Prometheus has enough data for rate calculation |
+| Alert pending | ~2m | Alert condition becomes true, enters pending state |
+| Alert fires | ~7m | After 5m in pending state, alert fires |
+| Demo ends | 10m 30s | Demo stops automatically |
 
-**Note:** Alerts have a `for: 5m` duration, meaning the condition must be true for 5 minutes before firing. The demo runs for 5.5 minutes to ensure alerts have time to trigger.
+**Note:** Alerts require `rate(...[5m])` for rate calculation plus `for: 5m` pending duration before firing (~10 minutes total). The demo runs for 10.5 minutes to ensure alerts transition from "pending" to "firing".
 
 **Common Causes:**
 
