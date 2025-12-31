@@ -1,5 +1,5 @@
-{{- $_ := required "image.repository is required" .Values.image.repository -}}
-{{- $_ := required "image.tag or image.digest is required" (or .Values.image.tag .Values.image.digest) -}}
+{{- /* Validation: image.repository and image.tag/digest are required for deployment */ -}}
+{{- /* These are validated by the deploy-app action before helm install */ -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

@@ -1,0 +1,221 @@
+name: 'PR Comment'
+description: 'Create or update PR comment with preview environment status'
+
+inputs:
+  status:
+    description: 'Status of the environment (deployed, failed, destroyed, preserved)'
+    required: true
+  preview-url:
+    description: 'Preview URL (required for deployed status)'
+    required: false
+    default: ''
+  namespace:
+    description: 'Kubernetes namespace'
+    required: true
+  commit-sha:
+    description: 'Git commit SHA (short)'
+    required: true
+  branch-name:
+    description: 'Git branch name'
+    required: true
+  github-token:
+    description: 'GitHub token for PR comment'
+    required: true
+  pr-number:
+    description: 'Pull request number'
+    required: true
+  marker:
+    description: 'Unique marker for finding existing comment'
+    required: false
+    default: '<!-- k8s-ee-pr-env -->'
+  run-url:
+    description: 'URL to workflow run (for failed status)'
+    required: false
+    default: ''
+  merged:
+    description: 'Whether PR was merged (for destroyed status)'
+    required: false
+    default: 'false'
+
+outputs:
+  comment-id:
+    description: 'ID of the created or updated comment'
+    value: ${{ steps.comment.outputs.comment-id }}
+  comment-url:
+    description: 'URL to the comment'
+    value: ${{ steps.comment.outputs.comment-url }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        STATUS: ${{ inputs.status }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        NAMESPACE: ${{ inputs.namespace }}
+      run: |
+        set -euo pipefail
+
+        # Validate status
+        if ! [[ "$STATUS" =~ ^(deployed|failed|destroyed|preserved)$ ]]; then
+          echo "ERROR: status must be one of: deployed, failed, destroyed, preserved"
+          echo "Received: '$STATUS'"
+          exit 1
+        fi
+
+        # Validate PR number
+        if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
+          echo "ERROR: pr-number must be numeric"
+          echo "Received: '$PR_NUMBER'"
+          exit 1
+        fi
+
+        # Validate namespace
+        if [ -z "$NAMESPACE" ]; then
+          echo "ERROR: namespace is required"
+          exit 1
+        fi
+
+        echo "Input validation passed"
+
+    - name: Create or update PR comment
+      id: comment
+      uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+      env:
+        STATUS: ${{ inputs.status }}
+        PREVIEW_URL: ${{ inputs.preview-url }}
+        NAMESPACE: ${{ inputs.namespace }}
+        COMMIT_SHA: ${{ inputs.commit-sha }}
+        BRANCH_NAME: ${{ inputs.branch-name }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        MARKER: ${{ inputs.marker }}
+        RUN_URL: ${{ inputs.run-url }}
+        MERGED: ${{ inputs.merged }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const marker = process.env.MARKER;
+          const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+          const status = process.env.STATUS;
+          const previewUrl = process.env.PREVIEW_URL;
+          const namespace = process.env.NAMESPACE;
+          const commitSha = process.env.COMMIT_SHA;
+          const branchName = process.env.BRANCH_NAME;
+          const prNumber = parseInt(process.env.PR_NUMBER, 10);
+          const runUrl = process.env.RUN_URL || `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+          const merged = process.env.MERGED === 'true';
+
+          let body;
+
+          switch (status) {
+            case 'deployed':
+              body = [
+                marker,
+                '## 🚀 Preview Environment Ready',
+                '',
+                '| Property | Value |',
+                '|----------|-------|',
+                '| **Status** | ✅ Deployed |',
+                `| **Preview URL** | [${previewUrl}](${previewUrl}) |`,
+                `| **Namespace** | \`${namespace}\` |`,
+                `| **Commit** | \`${commitSha}\` |`,
+                `| **Branch** | \`${branchName}\` |`,
+                `| **Updated** | ${timestamp} |`,
+                '',
+                '---',
+                '<sub>🤖 Managed by GitHub Actions</sub>',
+              ].join('\n');
+              break;
+
+            case 'failed':
+              body = [
+                marker,
+                '## ⚠️ Preview Environment Failed',
+                '',
+                '| Property | Value |',
+                '|----------|-------|',
+                '| **Status** | ❌ Deployment Failed |',
+                `| **Namespace** | \`${namespace}\` |`,
+                `| **Commit** | \`${commitSha}\` |`,
+                `| **Branch** | \`${branchName}\` |`,
+                `| **Updated** | ${timestamp} |`,
+                '',
+                `[View workflow logs](${runUrl})`,
+                '',
+                '---',
+                '<sub>🤖 Managed by GitHub Actions</sub>',
+              ].join('\n');
+              break;
+
+            case 'destroyed':
+              body = [
+                marker,
+                '## 🗑️ Preview Environment Destroyed',
+                '',
+                '| Property | Value |',
+                '|----------|-------|',
+                '| **Status** | 🏁 Cleaned up |',
+                `| **Namespace** | \`${namespace}\` |`,
+                `| **Merged** | ${merged ? 'Yes' : 'No'} |`,
+                `| **Destroyed** | ${timestamp} |`,
+                '',
+                '---',
+                '<sub>🤖 Managed by GitHub Actions</sub>',
+              ].join('\n');
+              break;
+
+            case 'preserved':
+              body = [
+                marker,
+                '## 🔒 Preview Environment Preserved',
+                '',
+                '| Property | Value |',
+                '|----------|-------|',
+                '| **Status** | 🔒 Preserved |',
+                `| **Namespace** | \`${namespace}\` |`,
+                `| **Merged** | ${merged ? 'Yes' : 'No'} |`,
+                `| **PR Closed** | ${timestamp} |`,
+                '',
+                'The environment was preserved and will remain active until the preserve expires.',
+                '',
+                'The preserve-expiry job will clean it up automatically.',
+                '',
+                '---',
+                '<sub>🤖 Managed by GitHub Actions</sub>',
+              ].join('\n');
+              break;
+          }
+
+          // Find existing comment
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: prNumber,
+            per_page: 100,
+          });
+
+          const existingComment = comments.find(c => c.body && c.body.includes(marker));
+
+          let result;
+          if (existingComment) {
+            result = await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: existingComment.id,
+              body: body,
+            });
+            console.log(`Updated comment: ${existingComment.html_url}`);
+            core.setOutput('comment-id', existingComment.id);
+            core.setOutput('comment-url', existingComment.html_url);
+          } else {
+            result = await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: body,
+            });
+            console.log(`Created comment: ${result.data.html_url}`);
+            core.setOutput('comment-id', result.data.id);
+            core.setOutput('comment-url', result.data.html_url);
+          }

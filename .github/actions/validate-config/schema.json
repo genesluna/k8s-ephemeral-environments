@@ -1,0 +1,226 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "k8s-ee Configuration",
+  "description": "Configuration schema for k8s-ephemeral-environments",
+  "type": "object",
+  "required": ["projectId"],
+  "properties": {
+    "projectId": {
+      "type": "string",
+      "description": "Unique identifier for this project (max 20 chars, lowercase alphanumeric + hyphens, must start/end with alphanumeric)",
+      "pattern": "^[a-z0-9]([a-z0-9-]{0,18}[a-z0-9])?$",
+      "minLength": 1,
+      "maxLength": 20
+    },
+    "app": {
+      "type": "object",
+      "description": "Application settings",
+      "properties": {
+        "port": {
+          "type": "integer",
+          "description": "Container port the application listens on",
+          "default": 3000,
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "healthPath": {
+          "type": "string",
+          "description": "Health check endpoint path",
+          "default": "/health",
+          "pattern": "^/.*"
+        },
+        "metricsPath": {
+          "type": "string",
+          "description": "Metrics endpoint path for Prometheus scraping",
+          "pattern": "^/.*"
+        }
+      },
+      "additionalProperties": false
+    },
+    "image": {
+      "type": "object",
+      "description": "Image build configuration",
+      "properties": {
+        "context": {
+          "type": "string",
+          "description": "Docker build context path",
+          "default": "."
+        },
+        "dockerfile": {
+          "type": "string",
+          "description": "Path to Dockerfile relative to context",
+          "default": "Dockerfile"
+        },
+        "repository": {
+          "type": "string",
+          "description": "Custom image repository (auto-generated if not set)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "resources": {
+      "type": "object",
+      "description": "Container resource configuration",
+      "properties": {
+        "requests": {
+          "type": "object",
+          "properties": {
+            "cpu": {
+              "type": "string",
+              "description": "CPU request (e.g., 50m, 100m)",
+              "default": "50m",
+              "pattern": "^[0-9]+(m|[0-9]*)?$"
+            },
+            "memory": {
+              "type": "string",
+              "description": "Memory request (e.g., 128Mi, 256Mi)",
+              "default": "128Mi",
+              "pattern": "^[0-9]+(Mi|Gi)$"
+            }
+          },
+          "additionalProperties": false
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "cpu": {
+              "type": "string",
+              "description": "CPU limit (e.g., 200m, 500m)",
+              "default": "200m",
+              "pattern": "^[0-9]+(m|[0-9]*)?$"
+            },
+            "memory": {
+              "type": "string",
+              "description": "Memory limit (e.g., 384Mi, 512Mi - max 512Mi)",
+              "default": "384Mi",
+              "pattern": "^[0-9]+(Mi|Gi)$"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "env": {
+      "type": "object",
+      "description": "Environment variables as key-value pairs",
+      "propertyNames": {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "databases": {
+      "type": "object",
+      "description": "Database configuration (all disabled by default)",
+      "properties": {
+        "postgresql": {
+          "oneOf": [
+            { "type": "boolean" },
+            {
+              "type": "object",
+              "properties": {
+                "enabled": { "type": "boolean", "default": true },
+                "version": { "type": "string", "default": "16" },
+                "storage": { "type": "string", "default": "1Gi" }
+              },
+              "additionalProperties": true
+            }
+          ],
+          "default": false
+        },
+        "mongodb": {
+          "oneOf": [
+            { "type": "boolean" },
+            {
+              "type": "object",
+              "properties": {
+                "enabled": { "type": "boolean", "default": true },
+                "version": { "type": "string" },
+                "storage": { "type": "string", "default": "1Gi" }
+              },
+              "additionalProperties": true
+            }
+          ],
+          "default": false
+        },
+        "redis": {
+          "oneOf": [
+            { "type": "boolean" },
+            {
+              "type": "object",
+              "properties": {
+                "enabled": { "type": "boolean", "default": true }
+              },
+              "additionalProperties": true
+            }
+          ],
+          "default": false
+        },
+        "minio": {
+          "oneOf": [
+            { "type": "boolean" },
+            {
+              "type": "object",
+              "properties": {
+                "enabled": { "type": "boolean", "default": true },
+                "storage": { "type": "string", "default": "1Gi" }
+              },
+              "additionalProperties": true
+            }
+          ],
+          "default": false
+        },
+        "mariadb": {
+          "oneOf": [
+            { "type": "boolean" },
+            {
+              "type": "object",
+              "properties": {
+                "enabled": { "type": "boolean", "default": true },
+                "storage": { "type": "string", "default": "1Gi" }
+              },
+              "additionalProperties": true
+            }
+          ],
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "ingress": {
+      "type": "object",
+      "description": "Ingress configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "metrics": {
+      "type": "object",
+      "description": "Prometheus metrics configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "interval": {
+          "type": "string",
+          "default": "30s",
+          "pattern": "^[0-9]+(s|m|h)$",
+          "description": "Scrape interval (e.g., 30s, 1m, 5m)"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

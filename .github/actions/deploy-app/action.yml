@@ -1,0 +1,372 @@
+name: 'Deploy App'
+description: 'Deploy application using k8s-ee-app Helm chart from OCI registry'
+
+inputs:
+  namespace:
+    description: 'Kubernetes namespace'
+    required: true
+  release-name:
+    description: 'Helm release name'
+    required: false
+    default: 'app'
+  project-id:
+    description: 'Project identifier'
+    required: true
+  pr-number:
+    description: 'PR number'
+    required: true
+  image-repository:
+    description: 'Container image repository'
+    required: true
+  image-tag:
+    description: 'Container image tag'
+    required: true
+  image-digest:
+    description: 'Container image digest'
+    required: false
+    default: ''
+  commit-sha:
+    description: 'Git commit SHA (short)'
+    required: true
+  branch-name:
+    description: 'Git branch name'
+    required: true
+  preview-domain:
+    description: 'Base domain for preview URLs'
+    required: false
+    default: 'k8s-ee.genesluna.dev'
+  chart-version:
+    description: 'k8s-ee-app chart version'
+    required: false
+    default: '1.0.0'
+  chart-repository:
+    description: 'OCI chart repository'
+    required: false
+    default: 'oci://ghcr.io/genesluna/k8s-ephemeral-environments/charts/k8s-ee-app'
+  timeout:
+    description: 'Helm deployment timeout'
+    required: false
+    default: '6m'
+  health-path:
+    description: 'Health check endpoint path'
+    required: false
+    default: '/health'
+  app-port:
+    description: 'Application container port'
+    required: false
+    default: '3000'
+
+outputs:
+  preview-url:
+    description: 'Full preview URL'
+    value: ${{ steps.deploy.outputs.preview-url }}
+  release-status:
+    description: 'Helm release status'
+    value: ${{ steps.deploy.outputs.release-status }}
+  deployment-name:
+    description: 'Kubernetes deployment name'
+    value: ${{ steps.deploy.outputs.deployment-name }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        NAMESPACE: ${{ inputs.namespace }}
+        PROJECT_ID: ${{ inputs.project-id }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        IMAGE_REPOSITORY: ${{ inputs.image-repository }}
+        IMAGE_TAG: ${{ inputs.image-tag }}
+        COMMIT_SHA: ${{ inputs.commit-sha }}
+        TIMEOUT: ${{ inputs.timeout }}
+        HEALTH_PATH: ${{ inputs.health-path }}
+        CHART_VERSION: ${{ inputs.chart-version }}
+        APP_PORT: ${{ inputs.app-port }}
+      run: |
+        set -euo pipefail
+
+        # Validate namespace format
+        if ! [[ "$NAMESPACE" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
+          echo "ERROR: Invalid namespace format"
+          echo "Received: '$NAMESPACE'"
+          exit 1
+        fi
+
+        # Validate project-id format
+        if ! [[ "$PROJECT_ID" =~ ^[a-z0-9]([a-z0-9-]{0,18}[a-z0-9])?$ ]]; then
+          echo "ERROR: project-id must be lowercase alphanumeric with hyphens, 1-20 chars"
+          echo "Received: '$PROJECT_ID'"
+          exit 1
+        fi
+
+        # Validate PR number is numeric
+        if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
+          echo "ERROR: pr-number must be numeric"
+          echo "Received: '$PR_NUMBER'"
+          exit 1
+        fi
+
+        # Validate image repository format
+        if [ -z "$IMAGE_REPOSITORY" ]; then
+          echo "ERROR: image-repository is required"
+          exit 1
+        fi
+
+        # Validate image tag is not empty
+        if [ -z "$IMAGE_TAG" ]; then
+          echo "ERROR: image-tag is required"
+          exit 1
+        fi
+
+        # Validate commit SHA format (short or full)
+        if ! [[ "$COMMIT_SHA" =~ ^[a-f0-9]{7,40}$ ]]; then
+          echo "ERROR: commit-sha must be a 7-40 character hex string"
+          echo "Received: '$COMMIT_SHA'"
+          exit 1
+        fi
+
+        # Validate timeout format (e.g., 6m, 10m, 1h)
+        if ! [[ "$TIMEOUT" =~ ^[0-9]+[smh]$ ]]; then
+          echo "ERROR: timeout must be in format like '6m', '300s', or '1h'"
+          echo "Received: '$TIMEOUT'"
+          exit 1
+        fi
+
+        # Validate health-path starts with /
+        if ! [[ "$HEALTH_PATH" =~ ^/[a-zA-Z0-9/_-]*$ ]]; then
+          echo "ERROR: health-path must start with / and contain only alphanumeric, /, _, -"
+          echo "Received: '$HEALTH_PATH'"
+          exit 1
+        fi
+
+        # Validate chart-version format (semver-like)
+        if ! [[ "$CHART_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+          echo "ERROR: chart-version must be in semver format (e.g., 1.0.0)"
+          echo "Received: '$CHART_VERSION'"
+          exit 1
+        fi
+
+        # Validate app-port is numeric and in valid range
+        if ! [[ "$APP_PORT" =~ ^[0-9]+$ ]]; then
+          echo "ERROR: app-port must be numeric"
+          echo "Received: '$APP_PORT'"
+          exit 1
+        fi
+        if [ "$APP_PORT" -lt 1 ] || [ "$APP_PORT" -gt 65535 ]; then
+          echo "ERROR: app-port must be between 1 and 65535"
+          echo "Received: '$APP_PORT'"
+          exit 1
+        fi
+
+        echo "Input validation passed"
+
+    - name: Sanitize branch name
+      id: sanitize
+      shell: bash
+      env:
+        BRANCH_RAW: ${{ inputs.branch-name }}
+      run: |
+        set -euo pipefail
+
+        # Sanitize branch name for K8s labels
+        BRANCH_SANITIZED=$(printf '%s' "$BRANCH_RAW" | \
+          sed 's/[^a-zA-Z0-9._-]/-/g' | \
+          sed 's/--*/-/g' | \
+          sed 's/^[^a-zA-Z0-9]*//' | \
+          cut -c1-63 | \
+          sed 's/[^a-zA-Z0-9]*$//')
+        BRANCH_SANITIZED="${BRANCH_SANITIZED:-unknown}"
+
+        echo "branch-name=$BRANCH_SANITIZED" >> "$GITHUB_OUTPUT"
+
+    - name: Clean up failed release
+      shell: bash
+      env:
+        NAMESPACE: ${{ inputs.namespace }}
+        RELEASE_NAME: ${{ inputs.release-name }}
+      run: |
+        set -euo pipefail
+
+        # Check for and clean up any failed release
+        RELEASE_STATUS=$(helm status "$RELEASE_NAME" -n "$NAMESPACE" 2>/dev/null | grep "STATUS:" | awk '{print $2}' || echo "not-found")
+
+        if [[ "$RELEASE_STATUS" =~ ^(failed|pending-install|pending-upgrade|pending-rollback)$ ]]; then
+          echo "Found release in $RELEASE_STATUS state, cleaning up..."
+          helm uninstall "$RELEASE_NAME" -n "$NAMESPACE" --wait --timeout 2m || true
+        else
+          echo "Release status: $RELEASE_STATUS (no cleanup needed)"
+        fi
+
+    - name: Deploy with Helm
+      id: deploy
+      shell: bash
+      env:
+        NAMESPACE: ${{ inputs.namespace }}
+        RELEASE_NAME: ${{ inputs.release-name }}
+        PROJECT_ID: ${{ inputs.project-id }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        IMAGE_REPOSITORY: ${{ inputs.image-repository }}
+        IMAGE_TAG: ${{ inputs.image-tag }}
+        IMAGE_DIGEST: ${{ inputs.image-digest }}
+        COMMIT_SHA: ${{ inputs.commit-sha }}
+        BRANCH_NAME: ${{ steps.sanitize.outputs.branch-name }}
+        PREVIEW_DOMAIN: ${{ inputs.preview-domain }}
+        CHART_REPOSITORY: ${{ inputs.chart-repository }}
+        CHART_VERSION: ${{ inputs.chart-version }}
+        TIMEOUT: ${{ inputs.timeout }}
+        HEALTH_PATH: ${{ inputs.health-path }}
+        APP_PORT: ${{ inputs.app-port }}
+      run: |
+        set -euo pipefail
+
+        PREVIEW_URL="https://${NAMESPACE}.${PREVIEW_DOMAIN}"
+        DEPLOYMENT_NAME="${PROJECT_ID}-pr-${PR_NUMBER}-app"
+
+        echo "Deploying to namespace: $NAMESPACE"
+        echo "Preview URL: $PREVIEW_URL"
+
+        # Build helm upgrade command using array (safe from injection)
+        HELM_ARGS=(
+          "upgrade" "--install" "$RELEASE_NAME" "$CHART_REPOSITORY"
+          "--version" "$CHART_VERSION"
+          "--namespace" "$NAMESPACE"
+          "--set" "projectId=$PROJECT_ID"
+          "--set" "image.repository=$IMAGE_REPOSITORY"
+          "--set" "image.tag=$IMAGE_TAG"
+          "--set" "prNumber=$PR_NUMBER"
+          "--set" "commitSha=$COMMIT_SHA"
+          "--set" "branchName=$BRANCH_NAME"
+          "--set" "previewDomain=$PREVIEW_DOMAIN"
+          "--set" "app.port=$APP_PORT"
+          "--set" "app.healthPath=$HEALTH_PATH"
+        )
+
+        # Add digest if provided
+        if [ -n "$IMAGE_DIGEST" ]; then
+          HELM_ARGS+=("--set" "image.digest=$IMAGE_DIGEST")
+        fi
+
+        HELM_ARGS+=("--atomic" "--timeout" "$TIMEOUT")
+
+        echo "Running: helm ${HELM_ARGS[*]}"
+        helm "${HELM_ARGS[@]}"
+
+        # Get release status
+        RELEASE_STATUS=$(helm status "$RELEASE_NAME" -n "$NAMESPACE" | grep "STATUS:" | awk '{print $2}')
+
+        # Output results
+        echo "preview-url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
+        echo "release-status=$RELEASE_STATUS" >> "$GITHUB_OUTPUT"
+        echo "deployment-name=$DEPLOYMENT_NAME" >> "$GITHUB_OUTPUT"
+
+    - name: Wait for deployment rollout
+      shell: bash
+      env:
+        NAMESPACE: ${{ inputs.namespace }}
+        PROJECT_ID: ${{ inputs.project-id }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        TIMEOUT: ${{ inputs.timeout }}
+      run: |
+        set -euo pipefail
+
+        DEPLOYMENT_NAME="${PROJECT_ID}-pr-${PR_NUMBER}-app"
+
+        echo "Waiting for deployment rollout..."
+        kubectl rollout status "deployment/${DEPLOYMENT_NAME}" -n "$NAMESPACE" --timeout="$TIMEOUT"
+
+        echo ""
+        echo "=== Deployment Status ==="
+        kubectl get deployment -n "$NAMESPACE"
+
+        echo ""
+        echo "=== Pods ==="
+        kubectl get pods -n "$NAMESPACE"
+
+        echo ""
+        echo "=== Ingress ==="
+        kubectl get ingress -n "$NAMESPACE"
+
+    - name: Health check
+      shell: bash
+      env:
+        NAMESPACE: ${{ inputs.namespace }}
+        HEALTH_PATH: ${{ inputs.health-path }}
+        APP_PORT: ${{ inputs.app-port }}
+      run: |
+        set -euo pipefail
+
+        echo "Running in-cluster health check..."
+
+        # Find a pod that is actually Ready and not terminating
+        echo "Finding a Ready pod..."
+        POD_NAME=""
+        for i in {1..30}; do
+          POD_NAME=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=app \
+            --field-selector=status.phase=Running \
+            -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.metadata.deletionTimestamp}{" "}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' | \
+            grep -E "^[^ ]+  True$" | head -1 | awk '{print $1}') || true
+
+          if [ -n "$POD_NAME" ]; then
+            echo "Found Ready pod: $POD_NAME"
+            break
+          fi
+
+          echo "Waiting for Ready pod (attempt $i/30)..."
+          sleep 2
+        done
+
+        if [ -z "$POD_NAME" ]; then
+          echo "ERROR: No ready pod found after 60 seconds"
+          kubectl get pods -n "$NAMESPACE" -o wide
+          kubectl describe pods -n "$NAMESPACE" | tail -50
+          exit 1
+        fi
+
+        # Setup cleanup trap
+        PF_PID=""
+        cleanup() {
+          if [ -n "${PF_PID:-}" ]; then
+            kill "$PF_PID" 2>/dev/null || true
+            wait "$PF_PID" 2>/dev/null || true
+          fi
+        }
+        trap cleanup EXIT INT TERM
+
+        # Port-forward and check health endpoint
+        kubectl port-forward -n "$NAMESPACE" "pod/$POD_NAME" "8080:${APP_PORT}" &
+        PF_PID=$!
+        sleep 2
+
+        # Retry health check
+        HEALTH_RESPONSE=""
+        for i in {1..10}; do
+          echo "Health check attempt $i..."
+          HEALTH_RESPONSE=$(curl --connect-timeout 5 --max-time 10 -sf "http://localhost:8080${HEALTH_PATH}" 2>/dev/null) && break
+          sleep 2
+        done
+
+        echo "Health check response: $HEALTH_RESPONSE"
+
+        if echo "$HEALTH_RESPONSE" | grep -qE '"status"\s*:\s*"(ok|healthy)"'; then
+          echo "Health check PASSED"
+        else
+          echo "Health check FAILED"
+          kubectl logs -n "$NAMESPACE" "$POD_NAME" --tail=20
+          exit 1
+        fi
+
+    - name: Deployment summary
+      if: always()
+      shell: bash
+      env:
+        NAMESPACE: ${{ inputs.namespace }}
+        PREVIEW_URL: ${{ steps.deploy.outputs.preview-url }}
+        RELEASE_STATUS: ${{ steps.deploy.outputs.release-status }}
+        IMAGE_TAG: ${{ inputs.image-tag }}
+      run: |
+        echo "=== Deployment Summary ==="
+        echo "Namespace: $NAMESPACE"
+        echo "Preview URL: $PREVIEW_URL"
+        echo "Release Status: $RELEASE_STATUS"
+        echo "Image Tag: $IMAGE_TAG"

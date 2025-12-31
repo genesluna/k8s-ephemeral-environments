@@ -1,0 +1,149 @@
+name: 'Destroy Namespace'
+description: 'Safely delete PR namespace with ownership verification'
+
+inputs:
+  namespace:
+    description: 'Namespace to delete'
+    required: true
+  repository:
+    description: 'GitHub repository (owner/repo) for ownership verification'
+    required: true
+  timeout:
+    description: 'Deletion timeout'
+    required: false
+    default: '4m'
+
+outputs:
+  deleted:
+    description: 'Whether namespace was deleted'
+    value: ${{ steps.delete.outputs.deleted }}
+  preserved:
+    description: 'Whether namespace was preserved (skipped deletion)'
+    value: ${{ steps.delete.outputs.preserved }}
+  skip-reason:
+    description: 'Reason if deletion was skipped'
+    value: ${{ steps.delete.outputs.skip-reason }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        NAMESPACE: ${{ inputs.namespace }}
+        REPOSITORY: ${{ inputs.repository }}
+      run: |
+        set -euo pipefail
+
+        # Validate namespace format
+        if ! [[ "$NAMESPACE" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
+          echo "ERROR: Invalid namespace format"
+          echo "Received: '$NAMESPACE'"
+          exit 1
+        fi
+
+        # Validate repository format
+        if ! [[ "$REPOSITORY" =~ ^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$ ]]; then
+          echo "ERROR: repository must be in format 'owner/repo'"
+          echo "Received: '$REPOSITORY'"
+          exit 1
+        fi
+
+        echo "Input validation passed"
+
+    - name: Delete namespace
+      id: delete
+      shell: bash
+      env:
+        NAMESPACE: ${{ inputs.namespace }}
+        REPOSITORY: ${{ inputs.repository }}
+        TIMEOUT: ${{ inputs.timeout }}
+      run: |
+        set -euo pipefail
+
+        # Check if namespace exists
+        if ! kubectl get namespace "$NAMESPACE" >/dev/null 2>&1; then
+          echo "Namespace $NAMESPACE does not exist, nothing to delete"
+          echo "deleted=false" >> "$GITHUB_OUTPUT"
+          echo "preserved=false" >> "$GITHUB_OUTPUT"
+          echo "skip-reason=not-found" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        # Verify ownership before deletion (security check)
+        echo "Verifying namespace ownership..."
+
+        MANAGED_BY=$(kubectl get namespace "$NAMESPACE" \
+          -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}' 2>/dev/null || echo "")
+        REPO=$(kubectl get namespace "$NAMESPACE" \
+          -o jsonpath='{.metadata.annotations.k8s-ee/repository}' 2>/dev/null || echo "")
+
+        if [ "$MANAGED_BY" != "github-actions" ]; then
+          echo "WARNING: Namespace $NAMESPACE is not managed by github-actions, skipping deletion"
+          echo "Found managed-by: $MANAGED_BY"
+          echo "deleted=false" >> "$GITHUB_OUTPUT"
+          echo "preserved=false" >> "$GITHUB_OUTPUT"
+          echo "skip-reason=not-managed" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        if [ -n "$REPO" ] && [ "$REPO" != "$REPOSITORY" ]; then
+          echo "WARNING: Namespace $NAMESPACE belongs to different repository: $REPO, skipping deletion"
+          echo "deleted=false" >> "$GITHUB_OUTPUT"
+          echo "preserved=false" >> "$GITHUB_OUTPUT"
+          echo "skip-reason=different-repo" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        # Check for preserve label
+        PRESERVE=$(kubectl get namespace "$NAMESPACE" \
+          -o jsonpath='{.metadata.labels.preserve}' 2>/dev/null || echo "")
+
+        if [ "$PRESERVE" = "true" ]; then
+          PRESERVE_UNTIL=$(kubectl get namespace "$NAMESPACE" \
+            -o jsonpath='{.metadata.annotations.k8s-ee/preserve-until}' 2>/dev/null || echo "unknown")
+          echo "INFO: Namespace $NAMESPACE has preserve=true label, skipping deletion"
+          echo "INFO: Preserve expires at: $PRESERVE_UNTIL"
+          echo "INFO: The namespace will be cleaned up by the preserve-expiry job after expiration"
+          echo "deleted=false" >> "$GITHUB_OUTPUT"
+          echo "preserved=true" >> "$GITHUB_OUTPUT"
+          echo "skip-reason=preserved" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        echo "Ownership verified, proceeding with deletion..."
+
+        # Remove finalizers from stuck PVCs to prevent hanging
+        echo "Removing finalizers from potentially stuck resources..."
+        kubectl get pvc -n "$NAMESPACE" -o name 2>/dev/null | \
+          xargs -r kubectl patch -n "$NAMESPACE" -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
+
+        # Delete the namespace
+        echo "Deleting namespace $NAMESPACE..."
+        if ! kubectl delete namespace "$NAMESPACE" --wait=true --timeout="$TIMEOUT"; then
+          echo "WARNING: Namespace deletion timed out, forcing removal..."
+          kubectl patch namespace "$NAMESPACE" -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
+          kubectl delete namespace "$NAMESPACE" --wait=false --timeout=1m || true
+        fi
+
+        echo "Namespace $NAMESPACE deleted successfully"
+        echo "deleted=true" >> "$GITHUB_OUTPUT"
+        echo "preserved=false" >> "$GITHUB_OUTPUT"
+        echo "skip-reason=" >> "$GITHUB_OUTPUT"
+
+    - name: Deletion summary
+      if: always()
+      shell: bash
+      env:
+        NAMESPACE: ${{ inputs.namespace }}
+        DELETED: ${{ steps.delete.outputs.deleted }}
+        PRESERVED: ${{ steps.delete.outputs.preserved }}
+        SKIP_REASON: ${{ steps.delete.outputs.skip-reason }}
+      run: |
+        echo "=== Deletion Summary ==="
+        echo "Namespace: $NAMESPACE"
+        echo "Deleted: $DELETED"
+        echo "Preserved: $PRESERVED"
+        if [ -n "$SKIP_REASON" ]; then
+          echo "Skip Reason: $SKIP_REASON"
+        fi
