@@ -265,13 +265,13 @@ jobs:
         with:
           repository: ${{ env.K8S_EE_REPO }}
           sparse-checkout: |
-            .github/actions
-            charts/k8s-ee-app
-            charts/postgresql
-            charts/mongodb
-            charts/redis
-            charts/minio
-            charts/mariadb
+            .github/actions/*
+            charts/k8s-ee-app/*
+            charts/postgresql/*
+            charts/mongodb/*
+            charts/redis/*
+            charts/minio/*
+            charts/mariadb/*
           sparse-checkout-cone-mode: false
 
       - name: Setup tools
