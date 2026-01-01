@@ -173,7 +173,7 @@ export function AuditViewer() {
                     <span className={`audit-status ${getStatusClass(event.statusCode)}`}>
                       {event.statusCode || '-'}
                     </span>
-                    <span className="audit-duration">{formatDuration(event.duration)}</span>
+                    <span className="audit-duration">{formatDuration(event.durationMs)}</span>
                     <span className="audit-time">
                       {new Date(event.timestamp).toLocaleTimeString()}
                     </span>

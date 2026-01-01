@@ -49,8 +49,8 @@ export interface TestRecord {
   id: number;
   name: string;
   data: Record<string, unknown>;
-  created_at: string;
-  updated_at: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface RecordsResponse {
@@ -140,7 +140,7 @@ export interface AuditEvent {
   path?: string;
   method?: string;
   statusCode?: number;
-  duration?: number;
+  durationMs?: number;
   userAgent?: string;
   ip?: string;
   correlationId?: string;
@@ -150,9 +150,7 @@ export interface AuditEvent {
 export interface AuditEventsResponse {
   events: AuditEvent[];
   total: number;
-  page: number;
-  limit: number;
-  timestamp: string;
+  filters?: Record<string, unknown>;
 }
 
 export interface AuditStats {
