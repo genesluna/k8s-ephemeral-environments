@@ -7,9 +7,9 @@ This document provides an index of all user stories derived from the PRD.
 | Metric | Count |
 |--------|-------|
 | Total Epics | 8 |
-| Total User Stories | 33 |
-| **Completed** | **33** ✅ |
-| Must Have | 18 |
+| Total User Stories | 34 |
+| **Completed** | **34** ✅ |
+| Must Have | 19 |
 | Should Have | 12 |
 | Could Have | 3 |
 
@@ -47,8 +47,8 @@ This document provides an index of all user stories derived from the PRD.
 
 | Story | Title | Priority | Points | Status |
 |-------|-------|----------|--------|--------|
-| [US-009](./epic-3-database/US-009-create-database-per-pr.md) | Create Isolated Database per PR | Must | 8 | ✅ Done |
-| [US-010](./epic-3-database/US-010-database-credentials.md) | Secure Database Credentials Management | Must | 3 | ✅ Done |
+| [US-009](./epic-3-database/US-009-create-database-per-pr.md) | Create Isolated Database per PR | Must | 13 | ✅ Done |
+| [US-010](./epic-3-database/US-010-database-credentials.md) | Secure Database Credentials Management | Must | 5 | ✅ Done |
 
 ### [Epic 4: Observability](./epic-4-observability/) ✅
 
@@ -75,6 +75,7 @@ This document provides an index of all user stories derived from the PRD.
 | [US-019](./epic-6-security/US-019-configure-network-policies.md) | Configure Network Policies | Should | 5 | ✅ Done |
 | [US-020](./epic-6-security/US-020-cleanup-job.md) | Implement Cleanup Job for Orphaned Resources | Should | 5 | ✅ Done |
 | [US-021](./epic-6-security/US-021-preserve-environment.md) | Preserve Environment Feature | Could | 5 | ✅ Done |
+| [US-034](./epic-6-security/US-034-organization-allowlist.md) | Organization Allowlist | Must | 3 | ✅ Done |
 
 ### [Epic 7: Platform Improvements](./epic-7-improvements/) ✅
 
@@ -109,7 +110,7 @@ This document provides an index of all user stories derived from the PRD.
 
 ## Prioritization (MoSCoW)
 
-- **Must** - Critical for MVP (18 stories, 104 points)
+- **Must** - Critical for MVP (19 stories, 114 points)
 - **Should** - Important but not blocking (12 stories, 59 points)
 - **Could** - Nice to have (3 stories, 13 points)
 - **Won't** - Out of scope for Phase 1
@@ -118,7 +119,7 @@ This document provides an index of all user stories derived from the PRD.
 
 | Priority | Stories | Total Points |
 |----------|---------|--------------|
-| Must | 18 | 104 |
+| Must | 19 | 114 |
 | Should | 12 | 59 |
 | Could | 3 | 13 |
-| **Total** | **33** | **176** |
+| **Total** | **34** | **186** |

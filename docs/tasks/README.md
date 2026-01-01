@@ -8,13 +8,13 @@ This document provides an index of all tasks organized by epic and user story.
 |------|---------|-------|
 | Epic 1: Infrastructure Foundation | 3 | 17 |
 | Epic 2: Ephemeral Environment Lifecycle | 5 | 28 |
-| Epic 3: Database per PR | 2 | 10 |
+| Epic 3: Database per PR | 2 | 18 |
 | Epic 4: Observability | 4 | 22 |
 | Epic 5: GitHub Runners | 3 | 17 |
-| Epic 6: Resource Management & Security | 4 | 23 |
+| Epic 6: Resource Management & Security | 5 | 32 |
 | Epic 7: Platform Improvements | 6 | 36 |
-| Epic 8: Simplified Onboarding | 6 | 41 |
-| **Total** | **33** | **194** |
+| Epic 8: Simplified Onboarding | 6 | 44 |
+| **Total** | **34** | **214** |
 
 ---
 
@@ -40,8 +40,8 @@ This document provides an index of all tasks organized by epic and user story.
 
 | Story | Task File | Tasks |
 |-------|-----------|-------|
-| US-009: Create Database | [US-009-tasks.md](./epic-3/US-009-tasks.md) | 6 |
-| US-010: Database Credentials | [US-010-tasks.md](./epic-3/US-010-tasks.md) | 4 |
+| US-009: Create Database | [US-009-tasks.md](./epic-3/US-009-tasks.md) | 10 |
+| US-010: Database Credentials | [US-010-tasks.md](./epic-3/US-010-tasks.md) | 8 |
 
 ## Epic 4: Observability
 
@@ -68,6 +68,7 @@ This document provides an index of all tasks organized by epic and user story.
 | US-019: Network Policies | [US-019-tasks.md](./epic-6/US-019-tasks.md) | 7 |
 | US-020: Cleanup Job | [US-020-tasks.md](./epic-6/US-020-tasks.md) | 6 |
 | US-021: Preserve Feature | [US-021-tasks.md](./epic-6/US-021-tasks.md) | 6 |
+| US-034: Organization Allowlist | [US-034-tasks.md](./epic-6/US-034-tasks.md) | 8 |
 
 ## Epic 7: Platform Improvements
 
@@ -88,8 +89,8 @@ This document provides an index of all tasks organized by epic and user story.
 | US-029: Generic App Chart | [US-029-tasks.md](./epic-8/US-029-tasks.md) | 9 |
 | US-030: Composite Actions | [US-030-tasks.md](./epic-8/US-030-tasks.md) | 7 |
 | US-031: Reusable Workflow | [US-031-tasks.md](./epic-8/US-031-tasks.md) | 7 |
-| US-032: Config Schema | [US-032-tasks.md](./epic-8/US-032-tasks.md) | TBD |
-| US-033: Documentation & Dogfood | [US-033-tasks.md](./epic-8/US-033-tasks.md) | TBD |
+| US-032: Config Schema | [US-032-tasks.md](./epic-8/US-032-tasks.md) | 7 |
+| US-033: Documentation & Dogfood | [US-033-tasks.md](./epic-8/US-033-tasks.md) | 6 |
 
 ---
 

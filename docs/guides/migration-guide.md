@@ -125,7 +125,6 @@ After successful migration, you can remove:
 |----------------|--------|
 | `k8s/ephemeral/` | Templates now in platform |
 | `charts/your-app/` | Uses generic k8s-ee-app chart |
-| `.github/actions/setup-kubectl/` | Uses platform composite actions |
 | `.github/actions/setup-tools/` | Uses platform composite actions |
 
 **Keep** your `Dockerfile` - it's still required.
