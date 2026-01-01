@@ -38,7 +38,7 @@
 
 ## Implementation
 
-- **Composite Action:** `.github/actions/setup-kubectl/action.yml`
+- **Composite Action:** `.github/actions/setup-tools/action.yml` (consolidated kubectl + helm)
   - Caches kubectl binary with version-based cache key
   - SHA256 checksum verification
   - ARM64 architecture support

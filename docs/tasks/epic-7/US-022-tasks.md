@@ -7,12 +7,12 @@
 ### T-022.1: Create kubectl Composite Action
 - **Description:** Create reusable composite action for kubectl installation
 - **Acceptance Criteria:**
-  - Composite action created at `.github/actions/setup-kubectl/action.yml`
+  - Composite action created (later consolidated into `.github/actions/setup-tools/`)
   - Accepts version as input parameter
   - Handles ARM64 and AMD64 architectures
   - Verifies installation with checksum
 - **Estimate:** S
-- **Files:** `.github/actions/setup-kubectl/action.yml`
+- **Files:** `.github/actions/setup-tools/action.yml`
 
 ### T-022.2: Add kubectl/Helm Binary Caching
 - **Description:** Cache kubectl and helm binaries across workflow runs
