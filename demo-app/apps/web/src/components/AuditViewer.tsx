@@ -54,8 +54,9 @@ export function AuditViewer() {
 
   const refreshEvents = useCallback(async () => {
     const typeParam = selectedType !== 'all' ? `&type=${selectedType}` : '';
+    const offset = (page - 1) * 20;
     const result = await eventsApi.execute(
-      `/api/audit/events?page=${page}&limit=20${typeParam}`,
+      `/api/audit/events?limit=20&offset=${offset}${typeParam}`,
       { method: 'GET' }
     );
     if (result) {
