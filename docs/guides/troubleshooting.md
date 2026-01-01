@@ -329,15 +329,50 @@ helm get manifest app -n k8s-ee-pr-{number} | grep -A5 "kind: ServiceAccount"
 kubectl create serviceaccount mongodb-database -n k8s-ee-pr-{number}
 ```
 
-**Resolution:**
-```bash
-# Check database cluster status
-kubectl get clusters.postgresql.cnpg.io -n k8s-ee-pr-{number}
+### Helm Chart Changes Not Taking Effect in PR
 
-# Test connectivity from debug pod
-kubectl run debug --rm -it --image=busybox -n k8s-ee-pr-{number} -- \
-  nc -zv k8s-ee-pr-{number}-postgresql-rw 5432
+**Symptoms:**
+- You modified a library chart (e.g., `charts/mongodb/`) but the change doesn't appear in the PR deployment
+- ServiceAccounts, ConfigMaps, or other resources from your chart changes are missing
+- Helm release uses old chart version
+
+**Root Cause:**
+Library charts (postgresql, mongodb, redis, minio, mariadb) are stored in an OCI registry (`oci://ghcr.io/genesluna/k8s-ephemeral-environments/charts`). The PR workflow pulls charts from this registry, not from the local checkout. Chart changes are only published when merged to `main`.
+
+**Diagnosis:**
+```bash
+# Check which chart version is deployed
+helm list -n k8s-ee-pr-{number}
+
+# Compare with local chart version
+grep '^version:' charts/mongodb/Chart.yaml
+
+# Check if your change is in the OCI registry
+helm show chart oci://ghcr.io/genesluna/k8s-ephemeral-environments/charts/k8s-ee-mongodb
 ```
+
+**Resolution:**
+PR environments now use local charts by default (`use-local-charts: 'true'`). This means chart changes in the PR are automatically tested. If you're seeing this issue, it may be from an older workflow run.
+
+To verify local charts are being used, check the deploy logs for:
+```
+Using local charts from: ./charts/k8s-ee-app
+```
+
+If you need to test against published OCI charts instead:
+```yaml
+# In pr-environment-reusable.yml
+- name: Deploy application
+  uses: ./.github/actions/deploy-app
+  with:
+    use-local-charts: 'false'  # Use OCI registry charts
+    # ... other inputs
+```
+
+**Prevention:**
+- Local charts are now the default for all PR deployments
+- Chart changes are automatically tested without needing OCI publication
+- Ensure chart directory is included in sparse checkout for deploy-app job
 
 ## Database Issues
 

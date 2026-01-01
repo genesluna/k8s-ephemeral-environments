@@ -260,11 +260,13 @@ jobs:
       release-status: ${{ steps.deploy.outputs.release-status }}
 
     steps:
-      - name: Checkout k8s-ee for actions
+      - name: Checkout k8s-ee for actions and charts
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ env.K8S_EE_REPO }}
-          sparse-checkout: .github/actions
+          sparse-checkout: |
+            .github/actions
+            charts
           sparse-checkout-cone-mode: false
 
       - name: Setup tools
@@ -287,6 +289,7 @@ jobs:
           branch-name: ${{ inputs.head-ref }}
           preview-domain: ${{ inputs.preview-domain }}
           chart-version: ${{ inputs.chart-version }}
+          use-local-charts: 'true'  # Use local charts to test chart changes in PRs
           app-port: ${{ needs.validate-config.outputs.app-port }}
           health-path: ${{ needs.validate-config.outputs.health-path }}
           postgresql-enabled: ${{ needs.validate-config.outputs.postgresql-enabled }}
