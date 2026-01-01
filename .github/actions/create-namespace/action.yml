@@ -263,14 +263,14 @@ runs:
         fi
 
         if [[ "${MONGODB_ENABLED}" == "true" ]]; then
-          # MongoDB has init containers (500m CPU each) that run before mongod starts
+          # MongoDB has init containers with 500m CPU request / 1 CPU limit each
           # Quota counts: max(highest init container, sum of regular containers)
-          # Init phase: max(500m, 150m) = 500m CPU request
-          # Running phase: 150m (100m mongod + 50m agent)
+          # Init phase: requests max(500m, 150m)=500m, limits max(1000m, 600m)=1000m
+          # Running phase: requests 150m, limits 600m
           # Must allocate for init phase which is higher
-          echo "  + MongoDB: 500m CPU request (init container), 640Mi memory, 3Gi storage"
-          CPU_REQUESTS=$((CPU_REQUESTS + 500))  # Init container needs 500m
-          CPU_LIMITS=$((CPU_LIMITS + 600))      # 500m mongod + 100m agent
+          echo "  + MongoDB: 500m/1000m CPU (init container), 640Mi memory, 3Gi storage"
+          CPU_REQUESTS=$((CPU_REQUESTS + 500))  # Init container needs 500m request
+          CPU_LIMITS=$((CPU_LIMITS + 1000))     # Init container needs 1000m limit
           MEM_REQUESTS=$((MEM_REQUESTS + 320))  # 256Mi mongod + 64Mi agent
           MEM_LIMITS=$((MEM_LIMITS + 640))      # 512Mi mongod + 128Mi agent
           STORAGE=$((STORAGE + 3))              # 1Gi data + 2Gi logs
