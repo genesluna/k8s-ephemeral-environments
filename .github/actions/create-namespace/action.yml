@@ -317,11 +317,20 @@ runs:
         fi
 
         echo ""
-        echo "Calculated quota:"
+        echo "Calculated quota (before buffer):"
         echo "  CPU requests: ${CPU_REQUESTS}m, limits: ${CPU_LIMITS}m"
         echo "  Memory requests: ${MEM_REQUESTS}Mi, limits: ${MEM_LIMITS}Mi"
         echo "  Storage: ${STORAGE}Gi, PVCs: ${PVCS}"
         echo "  Pods: ${PODS}, Services: ${SERVICES}"
+
+        # Add 15% headroom buffer for limits to handle temporary spikes and rolling updates
+        CPU_LIMITS=$((CPU_LIMITS * 115 / 100))
+        MEM_LIMITS=$((MEM_LIMITS * 115 / 100))
+
+        echo ""
+        echo "Final quota (with 15% buffer on limits):"
+        echo "  CPU requests: ${CPU_REQUESTS}m, limits: ${CPU_LIMITS}m"
+        echo "  Memory requests: ${MEM_REQUESTS}Mi, limits: ${MEM_LIMITS}Mi"
 
         cat <<EOF | kubectl apply --timeout=60s -f -
         apiVersion: v1
