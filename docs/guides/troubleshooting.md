@@ -166,6 +166,9 @@ kubectl delete ns k8s-ee-pr-{number} --force --grace-period=0
 **Symptoms:**
 - Namespace created but pods pending
 - Events show quota exceeded errors
+- Error: `exceeded quota: pr-quota, requested: limits.cpu=200m, used: limits.cpu=900m, limited: limits.cpu=1`
+
+**Note:** The platform now **automatically calculates** quotas based on enabled databases. This issue should be rare with current configurations.
 
 **Diagnosis:**
 ```bash
@@ -173,15 +176,39 @@ kubectl describe resourcequota -n k8s-ee-pr-{number}
 kubectl get events -n k8s-ee-pr-{number} --sort-by='.lastTimestamp'
 ```
 
+**Common Causes:**
+
+| Cause | Solution |
+|-------|----------|
+| Namespace created before quota fix | Close and reopen PR to recreate namespace with correct quota |
+| Previous pods not cleaned | Old resources still consuming quota |
+| Operator overhead higher than expected | See manual fix below |
+
+**Resource Consumption by Service:**
+
+| Service | Approx. CPU | Approx. Memory |
+|---------|-------------|----------------|
+| Application | 300m | 512Mi |
+| PostgreSQL | 500m | 512Mi |
+| MongoDB | 500m | 512Mi |
+| Redis | 200m | 128Mi |
+| MinIO | 500m | 512Mi |
+| MariaDB | 300m | 256Mi |
+
 **Resolution:**
 ```bash
-# Check resource usage
-kubectl top pods -n k8s-ee-pr-{number}
+# Check current usage vs. limits
+kubectl describe resourcequota pr-quota -n k8s-ee-pr-{number}
 
-# Clean up old PR namespaces
-kubectl get ns -l k8s-ee/pr-number --sort-by='.metadata.creationTimestamp'
-kubectl delete ns k8s-ee-pr-{old-number}
+# Option 1: Close and reopen PR to recreate with correct quota
+# This is the cleanest solution
+
+# Option 2: Manual patch (if Option 1 not feasible)
+kubectl patch resourcequota pr-quota -n k8s-ee-pr-{number} --type='merge' \
+  -p '{"spec":{"hard":{"limits.cpu":"3","limits.memory":"4Gi","requests.storage":"10Gi"}}}'
 ```
+
+See [Resource Requirements by Database](./k8s-ee-config-reference.md#resource-requirements-by-database) for how quotas are calculated.
 
 ## Deployment Failures
 

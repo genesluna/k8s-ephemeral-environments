@@ -180,6 +180,12 @@ jobs:
           commit-sha: ${{ inputs.head-sha }}
           repository: ${{ inputs.repository }}
           k8s-api-ip: ${{ inputs.k8s-api-ip }}
+          # Database flags for dynamic quota calculation
+          postgresql-enabled: ${{ needs.validate-config.outputs.postgresql-enabled }}
+          mongodb-enabled: ${{ needs.validate-config.outputs.mongodb-enabled }}
+          redis-enabled: ${{ needs.validate-config.outputs.redis-enabled }}
+          minio-enabled: ${{ needs.validate-config.outputs.minio-enabled }}
+          mariadb-enabled: ${{ needs.validate-config.outputs.mariadb-enabled }}
 
   # ============================================================================
   # BUILD IMAGE
