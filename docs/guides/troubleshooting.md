@@ -92,6 +92,36 @@ await this.runMigrations();    // Only after connection confirmed
 
 **Best practice:** Both init containers AND application retry should be implemented (defense in depth).
 
+## Authorization Issues
+
+### Organization Not Authorized
+
+**Symptoms:**
+- Workflow fails with "Organization 'myorg' is not authorized"
+- GitHub Actions shows error in validate-config job
+- No namespace is created
+
+**Error Message:**
+```
+============================================================
+ERROR: Organization 'myorg' is not authorized
+============================================================
+
+Repository 'myorg/some-repo' attempted to use k8s-ephemeral-environments
+but the organization is not in the allowed list.
+```
+
+**Cause:** Your organization is not in the platform allowlist.
+
+**Resolution:**
+
+1. Check if your organization is in the [allowed list](https://github.com/genesluna/k8s-ephemeral-environments/blob/main/.github/config/allowed-orgs.json)
+2. If not, [open an issue](https://github.com/genesluna/k8s-ephemeral-environments/issues) to request access
+3. Once approved, a maintainer will add your organization and merge the change
+4. The change takes effect immediately for new workflow runs
+
+See [Access Control Guide](./access-control.md) for more details.
+
 ## PR Namespace Issues
 
 ### Namespace Not Created

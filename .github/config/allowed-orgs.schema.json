@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Organization Allowlist",
+  "description": "Configuration for allowed organizations and repositories that can use k8s-ephemeral-environments",
+  "type": "object",
+  "required": ["mode", "organizations"],
+  "properties": {
+    "mode": {
+      "type": "string",
+      "enum": ["allowlist", "denylist", "disabled"],
+      "description": "Access control mode: allowlist (deny by default, allow listed), denylist (allow by default, deny listed), disabled (allow all)"
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description of this configuration"
+    },
+    "organizations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$",
+        "minLength": 1,
+        "maxLength": 39
+      },
+      "description": "List of GitHub organization or user names"
+    },
+    "repositories": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?/[a-zA-Z0-9._-]+$"
+      },
+      "default": [],
+      "description": "Optional: specific repositories to allow/deny (overrides org-level settings)"
+    }
+  },
+  "additionalProperties": false
+}
