@@ -250,6 +250,16 @@ runs:
 
         echo "Building local chart dependencies..."
 
+        # Debug: List what files were checked out
+        echo "=== Checked out files ==="
+        ls -la
+        echo "=== Charts directory ==="
+        ls -la charts/ || echo "charts/ not found"
+        echo "=== Charts subdirectories ==="
+        for d in k8s-ee-app postgresql mongodb redis minio mariadb; do
+          echo "charts/$d: $(ls charts/$d/Chart.yaml 2>/dev/null || echo 'MISSING')"
+        done
+
         # Validate charts directory exists
         if [ ! -d "charts/k8s-ee-app" ]; then
           echo "ERROR: charts/k8s-ee-app directory not found"
