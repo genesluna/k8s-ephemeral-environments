@@ -119,7 +119,10 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
   private async setupCollection(): Promise<void> {
     if (!this.client) return;
 
-    this.db = this.client.db();
+    // Use MONGODB_DATABASE env var or default to 'app'
+    // Note: Connection string uses /admin for auth, but we store data in 'app' database
+    const dbName = process.env.MONGODB_DATABASE || 'app';
+    this.db = this.client.db(dbName);
     this.collection = this.db.collection<AuditEvent>('audit_events');
 
     // Create TTL index for automatic cleanup (7 days)
