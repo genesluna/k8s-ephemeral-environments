@@ -323,12 +323,16 @@ runs:
         echo "  Storage: ${STORAGE}Gi, PVCs: ${PVCS}"
         echo "  Pods: ${PODS}, Services: ${SERVICES}"
 
-        # Add 15% headroom buffer for limits to handle temporary spikes and rolling updates
+        # Add headroom buffer for rolling updates (need to run old + new pod simultaneously)
+        # App pod needs: 100m CPU requests, 128Mi memory requests
+        # Add 15% buffer to limits and enough requests headroom for rolling updates
+        CPU_REQUESTS=$((CPU_REQUESTS + 100))  # Extra app pod during rolling update
+        MEM_REQUESTS=$((MEM_REQUESTS + 256))  # Extra app pod during rolling update
         CPU_LIMITS=$((CPU_LIMITS * 115 / 100))
         MEM_LIMITS=$((MEM_LIMITS * 115 / 100))
 
         echo ""
-        echo "Final quota (with 15% buffer on limits):"
+        echo "Final quota (with rolling update headroom):"
         echo "  CPU requests: ${CPU_REQUESTS}m, limits: ${CPU_LIMITS}m"
         echo "  Memory requests: ${MEM_REQUESTS}Mi, limits: ${MEM_LIMITS}Mi"
 
