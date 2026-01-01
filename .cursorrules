@@ -1,0 +1,423 @@
+# k8s-ephemeral-environments - Cursor Rules
+
+## Project Overview
+
+Platform for ephemeral Kubernetes environments per Pull Request. Each PR gets its own isolated namespace with application, database, and observability stack on a single VPS running k3s.
+
+**Phase 1 (current):** k3s on VPS (Oracle Cloud, ARM64)
+**Phase 2 (future):** Migration to Amazon EKS
+
+**Project Status:**
+- Phase 1: ✅ Complete - All 21 user stories implemented across 6 epics
+- Phase 1.5 (Epic 7): ✅ Complete - All 6 user stories (US-022 to US-027)
+- Phase 2 (Epic 8): ✅ Complete - Simplified Onboarding (US-028 to US-033)
+- US-034: ✅ Complete - Organization Allowlist (multi-tenant access control)
+
+## Tech Stack
+
+### Backend
+- **Runtime**: Node.js 22+
+- **Framework**: NestJS
+- **Package Manager**: pnpm 9+ (use pnpm, not yarn or npm)
+- **Language**: TypeScript (strict mode)
+- **ORM**: Drizzle ORM
+- **Databases**: MariaDB (default), PostgreSQL (optional), MongoDB, Redis, MinIO
+
+### Frontend
+- **Framework**: React + Vite
+- **Language**: TypeScript
+- **Styling**: CSS Modules
+
+### Infrastructure
+- **Kubernetes**: k3s v1.33+
+- **Ingress**: Traefik (bundled with k3s)
+- **CI/CD**: GitHub Actions with ARC (Actions Runner Controller)
+- **Observability**: Prometheus, Grafana, Loki
+- **Network**: NetworkPolicies (kube-router)
+- **Resource Limits**: ResourceQuota + LimitRange (dynamically calculated)
+- **Secrets**: Sealed Secrets
+- **Priority Classes**: `platform-critical`, `default-app`
+
+## Code Style
+
+### TypeScript/JavaScript
+- **ES6+ only**: Always use modern JavaScript features
+- **No comments**: Don't write comments in generated code
+- **Import statements**: Always use `import` instead of `require`
+- **Type safety**: Never use the `any` type - use proper types or `unknown`
+- **Nullish coalescing**: Prefer `??` instead of `||` when possible
+- **Formatting**: 2-space indentation, single quotes, trailing commas
+
+### File Organization
+- Group related functionality in modules
+- Keep files focused and single-purpose
+- Use barrel exports (`index.ts`) for public APIs
+- Place test files next to code: `*.spec.ts` or `*.test.ts`
+
+## Architecture
+
+### Namespace Structure
+- `kube-system` - k3s components (permanent)
+- `observability` - Prometheus, Loki, Grafana (permanent)
+- `arc-systems` - ARC controller (permanent)
+- `arc-runners` - GitHub Actions self-hosted runner pods (permanent)
+- `platform` - Shared base components (permanent)
+- `{project-id}-pr-{number}` - Ephemeral PR environments (e.g., `k8s-ee-pr-28`)
+
+### PR Environment Lifecycle
+1. PR opened → Organization validated against allowlist
+2. GitHub Action creates namespace `{project-id}-pr-{number}`
+3. ResourceQuota + LimitRange applied (dynamically calculated based on enabled databases)
+4. NetworkPolicies applied (namespace isolation, ingress/egress rules)
+5. Deploy app + databases per PR (based on k8s-ee.yaml configuration)
+6. Ingress created → `{project-id}-pr-{number}.k8s-ee.genesluna.dev`
+7. Bot comments on PR with preview URL
+8. Push to PR → automatic re-deploy
+9. (Optional) `/preserve` command → keeps environment for 48h after PR close
+10. PR closed/merged → namespace destroyed (unless preserved)
+
+## Database Configuration
+
+### Default Database
+- **MariaDB** is the default database for both local development and PR environments
+- PostgreSQL is optional (use `--profile postgresql` in docker-compose)
+- **Only one SQL database** (PostgreSQL OR MariaDB) should be enabled at a time
+- The `DATABASE_TYPE` environment variable is automatically set based on which database is enabled (MariaDB takes precedence)
+
+### Connection Strings
+- MariaDB: `MYSQL_URL=mysql://user:pass@host:3306/db`
+- PostgreSQL: `DATABASE_URL=postgres://user:pass@host:5432/db`
+
+### Database Migrations
+- Use Drizzle ORM migrations
+- Separate configs: `drizzle.mariadb.config.ts` and `drizzle.postgresql.config.ts`
+- Run migrations: `pnpm db:migrate:mariadb` or `pnpm db:migrate`
+
+### Database Bootstrap SQL (CloudNativePG)
+- **`initSQL`** - Runs on the `postgres` database (for extensions)
+- **`postInitApplicationSQL`** - Runs on the app database (for tables, functions, data)
+- **Dollar-quotes** - Use named delimiters (`$func$`) instead of `$$` - CloudNativePG template processing consumes `$$`
+- **Limitation** - Bootstrap SQL only runs during initial cluster creation
+
+### Environment Variables Injected
+| Service | Environment Variables |
+|---------|----------------------|
+| PostgreSQL | `DATABASE_TYPE=postgresql`, `DATABASE_URL`, `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` |
+| MariaDB | `DATABASE_TYPE=mariadb`, `MYSQL_URL`, `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD` |
+| MongoDB | `MONGODB_URL`, `MONGODB_URI` |
+| Redis | `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` (app constructs URL) |
+| MinIO | `MINIO_ENDPOINT`, `MINIO_PORT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET`, `S3_*` aliases |
+
+### Graceful Degradation
+All optional services gracefully degrade when disabled - the app continues to function with features disabled rather than failing.
+
+## Dynamic Resource Quotas
+
+ResourceQuota is **automatically calculated** based on enabled databases in `k8s-ee.yaml`. No manual configuration needed.
+
+### Resource Requirements
+```
+Base (app only):    300m CPU,  512Mi memory,  1Gi storage
++ PostgreSQL:      +500m CPU, +512Mi memory, +2Gi storage
++ MongoDB:         +1000m CPU (init), +640Mi memory, +3Gi storage
++ Redis:           +200m CPU, +128Mi memory
++ MinIO:           +1000m CPU (sidecar), +1024Mi memory, +2Gi storage
++ MariaDB:         +300m CPU, +256Mi memory, +2Gi storage
+```
+
+### Rolling Update Headroom
+The platform adds headroom for rolling updates:
+- Rolling update buffer: +100m CPU requests, +256Mi memory requests
+- Limits buffer: +15% on CPU limits, +15% on memory limits
+
+This prevents `exceeded quota` errors during deployments when Kubernetes runs both old and new app pods.
+
+## Service Initialization Patterns
+
+### Init Containers (Infrastructure Layer)
+Use native client tools for readiness checks, not port checks:
+
+| Service | Tool | Command |
+|---------|------|---------|
+| PostgreSQL | `pg_isready` | `pg_isready -h $HOST -p 5432 -U app` |
+| MongoDB | `mongosh` | `mongosh --host $HOST --eval "db.adminCommand('ping')"` |
+| Redis | `redis-cli` | `redis-cli -h $HOST ping` (use `REDISCLI_AUTH` env var for auth) |
+| MinIO | `curl` | `curl -sf http://$HOST:9000/minio/health/live` |
+| MariaDB | `mariadb-admin` | `mariadb-admin ping -h $HOST -u root` (use `MYSQL_PWD` env var) |
+
+**Init Container Memory Requirements:**
+- MongoDB init container using `mongo:7-jammy` + `mongosh` needs **256Mi memory** minimum (will OOMKill at 128Mi)
+- Other init containers (PostgreSQL, Redis, MinIO) work fine with 64Mi
+
+### MongoDB Operator Requirements
+The MongoDB Community Operator requires:
+1. **ServiceAccount** - Named `mongodb-database` (created by `serviceaccount.yaml`)
+2. **Role/RoleBinding** - Agent needs `secrets:get` and `pods:get,patch` (created by `role.yaml`)
+
+Without the RBAC, the agent readiness probe fails with `Error verifying agent is ready`.
+
+**MongoDB Connection String:** Uses `/admin` for auth database, but app should use `app` database for data:
+```typescript
+// Correct - explicitly specify database name
+const db = client.db('app');  // NOT client.db() which defaults to 'admin'
+```
+
+### Application Layer (Defense in Depth)
+Short retry in `onModuleInit()` to handle timing gap between init container exit and app startup:
+```typescript
+// Enterprise approach: 3 retries, 1s delay, then fail fast
+await this.waitForDatabase(3, 1000);
+await this.runMigrations();
+```
+
+## Kubernetes & Helm
+
+### Chart Structure
+- Library charts in `charts/` (postgresql, mongodb, redis, minio, mariadb)
+- Application charts: `charts/demo-app/`, `charts/k8s-ee-app/`
+- All charts published to OCI registry: `ghcr.io/genesluna/k8s-ephemeral-environments/charts`
+
+### Configuration
+- PR environments configured via `k8s-ee.yaml` in repo root
+- Schema validation via JSON schema in `.github/actions/validate-config/schema.json`
+- Database selection via `databases.mariadb.enabled` or `databases.postgresql.enabled`
+
+### Local Charts for PR Deployments
+PR environments use local charts from the checkout instead of OCI registry charts. This enables testing chart changes in PRs before they're published.
+
+The `deploy-app` action with `use-local-charts: 'true'`:
+1. Validates `charts/k8s-ee-app` directory exists
+2. Backs up `Chart.yaml` and restores on exit
+3. Replaces OCI URLs with `file://../` references
+4. Renames chart dependencies (e.g., `k8s-ee-postgresql` → `postgresql`)
+5. Removes `Chart.lock` to avoid sync issues
+6. Runs `helm dependency build` to package local charts
+7. Deploys using the local chart path instead of OCI URL
+
+### Best Practices
+- Always set resource requests and limits
+- Use init containers for database readiness checks
+- Include health probes (liveness, readiness, startup)
+- Security: runAsNonRoot, readOnlyRootFilesystem, drop ALL capabilities
+- Use PriorityClasses for scheduling
+
+## Docker & Local Development
+
+### Docker Compose
+- Default: MariaDB only (`docker compose up -d`)
+- Optional services via profiles: `--profile mongodb`, `--profile redis`, `--profile minio`, `--profile postgresql`
+- All services: `docker compose --profile all up -d`
+
+### Environment Variables
+- Use `.env.example` as template
+- Never commit `.env` files
+- Document all env vars in README files
+
+### VPS Access
+```bash
+ssh ubuntu@168.138.151.63
+```
+- OS: Ubuntu 24.04 (ARM64)
+- Hostname: genilda
+- All container images must support `linux/arm64`
+
+## Testing
+
+### Requirements
+- Minimum 50% code coverage
+- All tests must pass before merging
+- Use Vitest for unit tests
+- Place test files next to code: `*.spec.ts` or `*.test.ts`
+
+### Running Tests
+```bash
+cd demo-app
+pnpm test              # Run all tests
+pnpm test:cov          # With coverage
+pnpm --filter @demo-app/api test
+pnpm --filter @demo-app/web test
+```
+
+## Git Workflow
+
+### Branch Naming
+- Feature: `feat/us-XXX-description` or `feat/description`
+- Bug fix: `fix/issue-description`
+- Hotfix: `hotfix/critical-issue`
+
+### Commit Messages
+Follow Conventional Commits:
+```
+type(scope): description
+
+[optional body]
+
+[optional footer]
+```
+
+Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
+
+**Important:** Do not mention Claude or AI in commit messages or PR descriptions
+
+## Documentation
+
+### Key Documentation Files
+- `docs/PRD.md` - Product Requirements Document with full architecture
+- `docs/user-stories/` - 34 user stories across 8 epics
+- `docs/tasks/` - Detailed task breakdowns per story
+- `CONTRIBUTING.md` - Contribution guidelines
+- `docs/DEVELOPER-ONBOARDING.md` - New team member onboarding guide
+- `docs/guides/troubleshooting.md` - Troubleshooting decision tree
+- `docs/guides/service-development.md` - Best practices for database/storage services
+- `docs/guides/security.md` - Security architecture and hardening
+- `docs/guides/access-control.md` - Organization allowlist configuration
+- `docs/runbooks/` - Operational runbooks
+- `docs/guides/k8s-ee-config-reference.md` - k8s-ee.yaml configuration schema reference
+
+### When to Update
+- Add new features or APIs
+- Change configuration options
+- Modify deployment procedures
+- Fix bugs affecting user workflows
+
+### Documentation Style
+- Clear, concise language
+- Include code examples
+- Step-by-step procedures
+- Troubleshooting sections for complex features
+
+### User Story Status Format
+When marking a story as done, use this exact format after the title:
+```markdown
+# US-XXX: Story Title
+
+**Status:** Done
+
+## User Story
+...
+```
+
+The sync script requires `**Status:** Done` on a single line (not as a heading).
+
+## GitHub Actions
+
+### Workflow Structure
+- Reusable workflow: `.github/workflows/pr-environment-reusable.yml`
+- Composite actions: `.github/actions/`
+- Self-hosted runners: ARC (Actions Runner Controller) in cluster
+
+### Key Actions
+- `validate-config`: Parse and validate `k8s-ee.yaml`
+- `create-namespace`: Create namespace with quotas and policies
+- `build-image`: Build and push Docker image with Trivy scanning
+- `deploy-app`: Deploy using Helm chart
+- `pr-comment`: Post deployment status to PR
+
+### GitHub CLI Workarounds
+`gh pr edit --body` fails with a GraphQL error about deprecated classic projects. Use the API directly instead:
+```bash
+gh api repos/genesluna/k8s-ephemeral-environments/pulls/PR_NUMBER -X PATCH -f body="PR body here"
+```
+
+## Grafana Dashboards
+
+When creating or modifying Grafana dashboards:
+- **Runbook:** `docs/runbooks/grafana-dashboards.md` - Complete guide for dashboard operations
+- **Dashboard files:** `k8s/observability/dashboards/`
+- **Deployment:** Use sidecar auto-reload (never restart Grafana)
+
+### Datasource References
+| Datasource | UID Pattern |
+|------------|-------------|
+| Prometheus | `prometheus` (hardcoded) |
+| Loki | `${DS_LOKI}` (variable - REQUIRED) |
+| Alertmanager | `alertmanager` (hardcoded) |
+
+**Critical:** Loki panels MUST use `${DS_LOKI}` variable. Hardcoded `"uid": "loki"` will cause "No data" errors.
+
+Dashboards using Loki must include this variable in `templating.list`:
+```json
+{
+  "name": "DS_LOKI",
+  "type": "datasource",
+  "query": "loki",
+  "hide": 2
+}
+```
+
+## Security
+
+### Code Security
+- No hardcoded secrets
+- Use environment variables or Kubernetes secrets
+- Run Trivy scans in CI (fail on CRITICAL/HIGH)
+- Generate SBOM for all images
+
+### Kubernetes Security
+- NetworkPolicies for namespace isolation
+- ResourceQuotas to prevent resource exhaustion
+- Security contexts: runAsNonRoot, readOnlyRootFilesystem
+- Drop ALL capabilities
+
+## Conventions
+
+- Story files: `US-XXX-<slug>.md` in `docs/user-stories/epic-N-<name>/`
+- Task files: `US-XXX-tasks.md` in `docs/tasks/epic-N/`
+- Namespace naming: `{project-id}-pr-{number}` (e.g., `k8s-ee-pr-28`)
+- Preview URLs: `{project-id}-pr-{number}.{domain}` (e.g., `k8s-ee-pr-28.k8s-ee.genesluna.dev`)
+
+## Common Tasks
+
+### Adding a New Database
+1. Create library chart in `charts/{database}/`
+2. Add to `k8s-ee-app` Chart.yaml dependencies
+3. Add init container in deployment template (use native client tools for readiness)
+4. Add env var injection via `_helpers.tpl`
+5. Update `k8s-ee.yaml` schema
+6. Publish chart to OCI registry
+7. Update resource quota calculations in `create-namespace` action
+
+### Adding a New Feature
+1. Create feature branch: `feat/description`
+2. Implement with tests
+3. Update documentation
+4. Run tests and lint: `pnpm test && pnpm lint`
+5. Create PR (preview environment auto-created)
+6. Merge after review and CI passes
+
+### Debugging PR Environments
+- Access VPS: `ssh ubuntu@168.138.151.63`
+- Check pods: `kubectl get pods -n k8s-ee-pr-{number}`
+- View logs: `kubectl logs -n k8s-ee-pr-{number} {pod-name}`
+- Check Helm release: `helm status app -n k8s-ee-pr-{number}`
+
+## Scripts
+
+### Sync User Stories with GitHub Issues
+```bash
+# Sync both directions (default)
+python3 scripts/sync-stories.py
+
+# Sync from docs to GitHub only
+python3 scripts/sync-stories.py --direction=to-github
+
+# Sync from GitHub to docs only
+python3 scripts/sync-stories.py --direction=from-github
+
+# Preview changes without applying
+python3 scripts/sync-stories.py --dry-run
+```
+
+Requires: Python 3.8+, GitHub CLI (`gh`) authenticated
+
+## Important Notes
+
+- **Always use pnpm** (not yarn or npm) - project uses pnpm workspaces
+- **MariaDB is default** - PostgreSQL is optional
+- **No comments in code** - keep code self-documenting
+- **Type safety** - avoid `any`, use proper types
+- **Test coverage** - maintain minimum 50% coverage
+- **Conventional commits** - follow commit message format
+- **Documentation** - update docs when adding features
+- **ARM64 support** - All container images must support `linux/arm64`
+- **Graceful degradation** - Services should work when optional dependencies are disabled
