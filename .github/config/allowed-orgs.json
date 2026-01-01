@@ -1,0 +1,10 @@
+{
+  "$schema": "./allowed-orgs.schema.json",
+  "mode": "allowlist",
+  "description": "Organizations and users allowed to use k8s-ephemeral-environments",
+  "organizations": [
+    "genesluna",
+    "koder-cat"
+  ],
+  "repositories": []
+}

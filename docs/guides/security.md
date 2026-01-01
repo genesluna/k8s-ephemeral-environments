@@ -6,11 +6,52 @@ This document describes the security architecture of the k8s-ephemeral-environme
 
 The platform implements defense-in-depth with multiple security layers:
 
-1. **Network Isolation** - NetworkPolicies restrict pod-to-pod communication
-2. **Secret Management** - Sealed Secrets for GitOps-safe secret storage
-3. **Container Security** - Non-root containers with dropped capabilities
-4. **Image Security** - CVE scanning and SBOM generation
-5. **Resource Isolation** - ResourceQuota and LimitRange per namespace
+1. **Access Control** - Organization allowlist restricts who can create environments
+2. **Network Isolation** - NetworkPolicies restrict pod-to-pod communication
+3. **Secret Management** - Sealed Secrets for GitOps-safe secret storage
+4. **Container Security** - Non-root containers with dropped capabilities
+5. **Image Security** - CVE scanning and SBOM generation
+6. **Resource Isolation** - ResourceQuota and LimitRange per namespace
+
+## Access Control
+
+### Organization Allowlist
+
+The platform uses an organization allowlist to control which GitHub organizations and users can create ephemeral environments. This prevents unauthorized use of cluster resources.
+
+**Configuration:** `.github/config/allowed-orgs.json`
+
+```json
+{
+  "mode": "allowlist",
+  "organizations": ["genesluna", "koder-cat"],
+  "repositories": []
+}
+```
+
+### How It Works
+
+1. When a PR triggers the reusable workflow, the owner is extracted from the repository name
+2. The owner is checked against the allowlist (case-insensitive)
+3. If not authorized, the workflow fails immediately with a clear error message
+4. Only authorized organizations/users can consume cluster resources
+
+### Security Properties
+
+| Property | Description |
+|----------|-------------|
+| **Case-insensitive** | Prevents bypass via case manipulation |
+| **Fail-safe** | Empty allowlist denies all access |
+| **Audit trail** | Changes tracked in git history |
+| **CODEOWNERS protected** | Requires owner approval to modify |
+
+### Modes
+
+- `allowlist` - Only listed organizations allowed (recommended)
+- `denylist` - All except listed organizations allowed
+- `disabled` - No access control (not recommended)
+
+See [Access Control Guide](./access-control.md) for complete documentation.
 
 ## Network Isolation
 
@@ -187,6 +228,7 @@ spec:
 
 | Component | Security Measures |
 |-----------|-------------------|
+| Reusable Workflow | Organization allowlist, CODEOWNERS protection |
 | GitHub Actions Runners | Ephemeral pods, isolated namespace, limited RBAC |
 | Traefik Ingress | TLS termination, rate limiting, security headers |
 | Prometheus/Loki | Read-only access to PR namespaces |
@@ -221,6 +263,7 @@ Runners have cluster-admin access within their assigned namespace only.
 
 ## Security Checklist for New Projects
 
+- [ ] Verify organization is in allowlist (`.github/config/allowed-orgs.json`)
 - [ ] Use pinned image tags (never `:latest`)
 - [ ] Set resource requests and limits
 - [ ] Configure security context (runAsNonRoot)
@@ -248,6 +291,7 @@ Manual cleanup: `kubectl delete ns <namespace>`
 
 ## References
 
+- [Access Control Guide](./access-control.md) - Organization allowlist configuration
 - [Kubernetes Pod Security Standards](https://kubernetes.io/docs/concepts/security/pod-security-standards/)
 - [Sealed Secrets](https://sealed-secrets.netlify.app/)
 - [Trivy Scanner](https://aquasecurity.github.io/trivy/)

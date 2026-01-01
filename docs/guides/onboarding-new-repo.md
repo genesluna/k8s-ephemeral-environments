@@ -2,6 +2,21 @@
 
 Add ephemeral PR environments to any repository in 3 simple steps.
 
+## Prerequisites
+
+### Organization Access
+
+Your GitHub organization must be added to the platform allowlist before your repositories can use ephemeral PR environments.
+
+**Check if your organization is allowed:**
+- View the [allowed organizations list](https://github.com/genesluna/k8s-ephemeral-environments/blob/main/.github/config/allowed-orgs.json)
+
+**Request access:**
+- Open an issue at [k8s-ephemeral-environments](https://github.com/genesluna/k8s-ephemeral-environments/issues)
+- Include your organization name and a brief description of your use case
+
+See [Access Control Guide](./access-control.md) for details.
+
 ## Quick Start
 
 ### Step 1: Create Configuration File

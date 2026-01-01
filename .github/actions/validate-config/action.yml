@@ -116,6 +116,109 @@ runs:
 
         echo "Input validation passed"
 
+    - name: Validate organization access
+      shell: bash
+      env:
+        REPOSITORY: ${{ inputs.repository }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+
+        # Resolve config path relative to action directory
+        CONFIG_FILE="${ACTION_PATH}/../config/allowed-orgs.json"
+
+        if [ ! -f "$CONFIG_FILE" ]; then
+          echo "WARNING: Allowed organizations config not found at: $CONFIG_FILE"
+          echo "Proceeding without organization restriction (backwards compatibility)"
+          exit 0
+        fi
+
+        # Validate JSON syntax
+        if ! jq empty "$CONFIG_FILE" 2>/dev/null; then
+          echo "ERROR: Invalid JSON in allowed-orgs.json"
+          exit 1
+        fi
+
+        # Extract organization from repository (owner/repo -> owner)
+        CALLING_ORG=$(echo "$REPOSITORY" | cut -d'/' -f1)
+        CALLING_REPO="$REPOSITORY"
+
+        echo "Checking access for organization: $CALLING_ORG"
+        echo "Repository: $CALLING_REPO"
+
+        # Parse config
+        MODE=$(jq -r '.mode // "allowlist"' "$CONFIG_FILE")
+        ORG_COUNT=$(jq '.organizations | length' "$CONFIG_FILE")
+        REPO_COUNT=$(jq '.repositories // [] | length' "$CONFIG_FILE")
+
+        echo "Access control mode: $MODE"
+        echo "Allowed organizations: $ORG_COUNT"
+        echo "Allowed repositories: $REPO_COUNT"
+
+        if [ "$MODE" = "disabled" ]; then
+          echo "Organization access control is disabled"
+          exit 0
+        fi
+
+        # Warn if allowlist is empty (fail-safe: denies all)
+        if [ "$MODE" = "allowlist" ] && [ "$ORG_COUNT" -eq 0 ] && [ "$REPO_COUNT" -eq 0 ]; then
+          echo "WARNING: Allowlist is empty - all access will be denied"
+        fi
+
+        # Check if repository is explicitly listed (overrides org-level)
+        # Case-insensitive comparison
+        REPO_MATCH=$(jq -r --arg repo "$CALLING_REPO" \
+          '(.repositories // []) | map(ascii_downcase) | index($repo | ascii_downcase) != null' \
+          "$CONFIG_FILE")
+
+        # Check if organization is listed (case-insensitive)
+        ORG_MATCH=$(jq -r --arg org "$CALLING_ORG" \
+          '(.organizations // []) | map(ascii_downcase) | index($org | ascii_downcase) != null' \
+          "$CONFIG_FILE")
+
+        # Determine access based on mode
+        if [ "$MODE" = "allowlist" ]; then
+          if [ "$REPO_MATCH" = "true" ] || [ "$ORG_MATCH" = "true" ]; then
+            echo "Access granted: '$CALLING_ORG' is authorized"
+            if [ "$REPO_MATCH" = "true" ]; then
+              echo "  Match type: specific repository override"
+            else
+              echo "  Match type: organization allowlist"
+            fi
+            exit 0
+          else
+            echo ""
+            echo "============================================================"
+            echo "ERROR: Organization '$CALLING_ORG' is not authorized"
+            echo "============================================================"
+            echo ""
+            echo "Repository '$CALLING_REPO' attempted to use k8s-ephemeral-environments"
+            echo "but the organization is not in the allowed list."
+            echo ""
+            echo "To request access, please open an issue at:"
+            echo "https://github.com/genesluna/k8s-ephemeral-environments/issues"
+            echo ""
+            exit 1
+          fi
+        elif [ "$MODE" = "denylist" ]; then
+          if [ "$REPO_MATCH" = "true" ] || [ "$ORG_MATCH" = "true" ]; then
+            echo ""
+            echo "============================================================"
+            echo "ERROR: Organization '$CALLING_ORG' is blocked"
+            echo "============================================================"
+            echo ""
+            echo "Repository '$CALLING_REPO' is not allowed to use this platform."
+            echo ""
+            exit 1
+          else
+            echo "Access granted: '$CALLING_ORG' is not in the denylist"
+            exit 0
+          fi
+        else
+          echo "ERROR: Unknown access control mode: $MODE"
+          exit 1
+        fi
+
     - name: Install tools
       shell: bash
       env:

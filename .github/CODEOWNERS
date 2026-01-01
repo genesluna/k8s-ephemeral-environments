@@ -1,0 +1,16 @@
+# Code owners for k8s-ephemeral-environments
+# These owners will be requested for review when someone opens a pull request.
+
+# Security-sensitive files - require owner approval
+/.github/config/allowed-orgs.json @genesluna
+/.github/config/allowed-orgs.schema.json @genesluna
+
+# Workflow and action files - require owner approval
+/.github/workflows/ @genesluna
+/.github/actions/ @genesluna
+
+# Kubernetes manifests - require owner approval
+/k8s/ @genesluna
+
+# Helm charts - require owner approval
+/charts/ @genesluna
