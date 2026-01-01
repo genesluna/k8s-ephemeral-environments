@@ -233,7 +233,8 @@ runs:
         # Resource requirements (requests / limits):
         # - Application:  100m / 300m CPU,  256Mi / 512Mi memory, 1Gi storage
         # - PostgreSQL:   250m / 500m CPU,  256Mi / 512Mi memory, 2Gi storage
-        # - MongoDB:      250m / 500m CPU,  256Mi / 512Mi memory, 2Gi storage
+        # - MongoDB:      150m / 600m CPU,  320Mi / 640Mi memory, 3Gi storage
+        #   (includes mongod + agent containers, data + logs volumes)
         # - Redis:        100m / 200m CPU,   64Mi / 128Mi memory
         # - MinIO:        250m / 500m CPU,  256Mi / 512Mi memory, 2Gi storage
         # - MariaDB:      150m / 300m CPU,  128Mi / 256Mi memory, 2Gi storage
@@ -262,13 +263,14 @@ runs:
         fi
 
         if [[ "${MONGODB_ENABLED}" == "true" ]]; then
-          echo "  + MongoDB: 500m CPU, 512Mi memory, 1Gi storage"
-          CPU_REQUESTS=$((CPU_REQUESTS + 250))
-          CPU_LIMITS=$((CPU_LIMITS + 500))
-          MEM_REQUESTS=$((MEM_REQUESTS + 256))
-          MEM_LIMITS=$((MEM_LIMITS + 512))
-          STORAGE=$((STORAGE + 2))
-          PVCS=$((PVCS + 1))
+          # MongoDB needs: mongod (256Mi/512Mi) + agent (64Mi/128Mi)
+          echo "  + MongoDB: 650m CPU, 640Mi memory (mongod + agent), 3Gi storage (data + logs)"
+          CPU_REQUESTS=$((CPU_REQUESTS + 150))  # 100m mongod + 50m agent
+          CPU_LIMITS=$((CPU_LIMITS + 600))      # 500m mongod + 100m agent
+          MEM_REQUESTS=$((MEM_REQUESTS + 320))  # 256Mi mongod + 64Mi agent
+          MEM_LIMITS=$((MEM_LIMITS + 640))      # 512Mi mongod + 128Mi agent
+          STORAGE=$((STORAGE + 3))              # 1Gi data + 2Gi logs
+          PVCS=$((PVCS + 2))                    # data + logs volumes
           PODS=$((PODS + 2))
           SERVICES=$((SERVICES + 1))
         fi

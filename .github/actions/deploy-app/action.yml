@@ -50,7 +50,7 @@ inputs:
   timeout:
     description: 'Helm deployment timeout'
     required: false
-    default: '6m'
+    default: '10m'
   health-path:
     description: 'Health check endpoint path'
     required: false
@@ -250,16 +250,6 @@ runs:
 
         echo "Building local chart dependencies..."
 
-        # Debug: List what files were checked out
-        echo "=== Checked out files ==="
-        ls -la
-        echo "=== Charts directory ==="
-        ls -la charts/ || echo "charts/ not found"
-        echo "=== Charts subdirectories ==="
-        for d in k8s-ee-app postgresql mongodb redis minio mariadb; do
-          echo "charts/$d: $(ls charts/$d/Chart.yaml 2>/dev/null || echo 'MISSING')"
-        done
-
         # Validate charts directory exists
         if [ ! -d "charts/k8s-ee-app" ]; then
           echo "ERROR: charts/k8s-ee-app directory not found"
@@ -290,11 +280,6 @@ runs:
         for chart in postgresql mongodb redis minio mariadb; do
           sed -i "/name: ${chart}$/,/repository:/{s|repository: \"oci://ghcr.io/genesluna/k8s-ephemeral-environments/charts\"|repository: \"file://../${chart}\"|}" Chart.yaml
         done
-
-        # Debug: Show modified dependencies section
-        echo "=== Modified Chart.yaml dependencies ==="
-        grep -A 3 "name: postgresql$" Chart.yaml | head -4
-        grep -A 3 "name: mongodb$" Chart.yaml | head -4
 
         # Remove Chart.lock to avoid sync issues (will be regenerated)
         rm -f Chart.lock
