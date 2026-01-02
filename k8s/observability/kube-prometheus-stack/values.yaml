@@ -201,10 +201,10 @@ kube-state-metrics:
   resources:
     requests:
       cpu: 10m
-      memory: 32Mi
+      memory: 128Mi
     limits:
       cpu: 100m
-      memory: 64Mi
+      memory: 256Mi
 
 # =============================================================================
 # Prometheus Operator Configuration

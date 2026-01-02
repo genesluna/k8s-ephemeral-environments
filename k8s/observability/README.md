@@ -85,11 +85,11 @@ The observability stack is designed to stay within ~4GB total memory:
 | Grafana | 256Mi |
 | Alertmanager | 64Mi |
 | node-exporter | 64Mi |
-| kube-state-metrics | 64Mi |
+| kube-state-metrics | 256Mi |
 | Prometheus Operator | 128Mi |
 | Loki | 1024Mi |
 | Promtail | 128Mi |
-| **Total** | **~3.3GB** |
+| **Total** | **~3.5GB** |
 
 ## Namespace
 
