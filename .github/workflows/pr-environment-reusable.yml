@@ -188,6 +188,8 @@ jobs:
           redis-enabled: ${{ needs.validate-config.outputs.redis-enabled }}
           minio-enabled: ${{ needs.validate-config.outputs.minio-enabled }}
           mariadb-enabled: ${{ needs.validate-config.outputs.mariadb-enabled }}
+          # Registry token for imagePullSecret (allows k8s to pull private GHCR images)
+          registry-token: ${{ secrets.GITHUB_TOKEN }}
 
   # ============================================================================
   # BUILD IMAGE
@@ -311,6 +313,8 @@ jobs:
           mariadb-config: ${{ needs.validate-config.outputs.mariadb-config }}
           metrics-enabled: ${{ needs.validate-config.outputs.metrics-enabled }}
           metrics-config: ${{ needs.validate-config.outputs.metrics-config }}
+          # imagePullSecret for private GHCR packages
+          image-pull-secret: ghcr-secret
 
   # ============================================================================
   # PR COMMENT (DEPLOY)

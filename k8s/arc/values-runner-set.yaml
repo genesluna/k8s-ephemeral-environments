@@ -13,27 +13,12 @@ minRunners: 0
 maxRunners: 3
 
 # Runner pod template
+# IMPORTANT: Only set serviceAccountName here. Do NOT override container spec
+# (image, command, resources, volumeMounts) as this breaks JIT config injection.
+# The ARC controller injects runner configuration at pod creation time.
 template:
   spec:
-    containers:
-      - name: runner
-        image: ghcr.io/actions/actions-runner:2.321.0
-        command: ["/home/runner/run.sh"]
-        resources:
-          limits:
-            cpu: "1"
-            memory: 2Gi
-          requests:
-            cpu: 250m
-            memory: 512Mi
-        # Mount the service account for kubectl access
-        volumeMounts:
-          - name: work
-            mountPath: /home/runner/_work
-    volumes:
-      - name: work
-        emptyDir: {}
-    # Service account with cluster access
+    # Service account with cluster access for kubectl operations
     serviceAccountName: arc-runner-sa
 
 # Controller service account (for communication with controller)

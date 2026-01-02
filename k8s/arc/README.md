@@ -194,6 +194,59 @@ jobs:
       - run: kubectl get nodes
 ```
 
+## Important Configuration Notes
+
+### JIT Config Injection
+
+The ARC controller uses Just-In-Time (JIT) configuration to inject runner settings at pod creation time. **Do NOT override the container spec** in the template - only set `serviceAccountName`:
+
+```yaml
+# CORRECT - minimal template
+template:
+  spec:
+    serviceAccountName: arc-runner-sa
+
+# WRONG - breaks JIT config injection
+template:
+  spec:
+    containers:
+      - name: runner
+        image: ghcr.io/actions/actions-runner:2.321.0  # DON'T DO THIS
+        command: ["/home/runner/run.sh"]               # DON'T DO THIS
+```
+
+If you override the container spec, runners will fail with:
+```
+An error occurred: Not configured. Run config.(sh/cmd) to configure the runner.
+```
+
+### Public Repository Access
+
+For org-level runners to accept jobs from **public repositories**, the runner group must allow public repos:
+
+1. Go to https://github.com/organizations/koder-cat/settings/actions/runner-groups
+2. Click on **Default** group
+3. Enable **"Allow public repositories"**
+
+Or via API:
+```bash
+gh api --method PATCH /orgs/koder-cat/actions/runner-groups/1 \
+  -F allows_public_repositories=true
+```
+
+### GHCR Package Visibility
+
+Container images pushed to GHCR in an organization are **private by default**. The platform automatically creates an `imagePullSecret` named `ghcr-secret` in each PR namespace using the workflow's `GITHUB_TOKEN`.
+
+This secret allows Kubernetes to pull private images from GHCR without making packages public.
+
+**How it works:**
+1. `create-namespace` action creates `ghcr-secret` with registry credentials
+2. `deploy-app` action passes `imagePullSecrets[0].name=ghcr-secret` to Helm
+3. The deployment pod uses this secret to authenticate with GHCR
+
+**Token Expiration Note:** The `GITHUB_TOKEN` is valid only for the workflow run duration (typically up to 6 hours). If a pod restarts after the workflow completes (e.g., due to OOM or node eviction), image pulls may fail with `401 Unauthorized`. To fix this, push a new commit or re-run the workflow to refresh the token.
+
 ## Troubleshooting
 
 ### Controller not starting
@@ -205,6 +258,16 @@ kubectl logs -n arc-systems -l app.kubernetes.io/name=gha-runner-scale-set-contr
 ```bash
 kubectl logs -n arc-runners -l app.kubernetes.io/component=runner
 ```
+
+### Runners crash with "Not configured"
+This indicates JIT config injection failed. Check that you haven't overridden the container spec in `values-runner-set.yaml`. Only set `serviceAccountName` in the template.
+
+### Jobs queued but not picked up
+1. Check if the runner group allows public repos (if applicable)
+2. Verify the GitHub App has correct permissions
+3. Check listener logs: `kubectl logs -n arc-systems -l app.kubernetes.io/name=arc-runner-set`
+
+See `docs/runbooks/arc-operations.md` for detailed troubleshooting steps.
 
 ### Check secret configuration
 ```bash

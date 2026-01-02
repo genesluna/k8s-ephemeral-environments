@@ -160,6 +160,13 @@ Individual containers: max 512Mi memory, 500m CPU. See [Resource Requirements](.
 - Check base image supports ARM64
 - Verify all dependencies are included
 
+### Image pull failed (401 Unauthorized)
+
+- Container images in GHCR are private by default for organizations
+- The platform automatically creates an `imagePullSecret` using `GITHUB_TOKEN`
+- If pods restart after workflow completion, image pulls may fail (token expired)
+- **Fix:** Re-run the workflow to refresh the registry credentials
+
 ### Deployment failed
 
 - Check pod logs: `kubectl logs -n {namespace} -l k8s-ee/project-id={projectId}`

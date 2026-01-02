@@ -148,7 +148,9 @@ gh run view <run-id> --log-failed
 |-------|----------|
 | Workflow not triggered | Check PR is from correct repo, not a fork |
 | Runner unavailable | Check `arc-runners` namespace for healthy runners |
-| kubectl auth failed | Verify KUBECONFIG secret in GitHub |
+| Jobs queued indefinitely | Check runner group allows public repos |
+| Runner crashes with "Not configured" | JIT config broken - check values file |
+| kubectl auth failed | Verify runner ServiceAccount permissions |
 | Previous run conflict | Delete stale namespace manually |
 
 **Resolution:**
@@ -156,12 +158,20 @@ gh run view <run-id> --log-failed
 # Check runner status
 kubectl get pods -n arc-runners
 
+# Check listener pod (receives job notifications)
+kubectl logs -n arc-systems -l app.kubernetes.io/name=arc-runner-set --tail=50
+
+# Verify runner group allows public repos (if applicable)
+gh api /orgs/{org}/actions/runner-groups --jq '.runner_groups[] | {name, allows_public_repositories}'
+
 # Re-run failed workflow
 gh run rerun <run-id>
 
 # Manual namespace cleanup if stuck
-kubectl delete ns k8s-ee-pr-{number} --force --grace-period=0
+kubectl delete ns {namespace} --force --grace-period=0
 ```
+
+See `docs/runbooks/arc-operations.md` for detailed ARC troubleshooting.
 
 ### ResourceQuota Exceeded
 
@@ -282,10 +292,11 @@ kubectl describe pod -n k8s-ee-pr-{number} <pod-name>
 
 **Symptoms:**
 - Pod stuck in `ImagePullBackOff` or `ErrImagePull`
+- Events show `401 Unauthorized` from GHCR
 
 **Diagnosis:**
 ```bash
-kubectl describe pod -n k8s-ee-pr-{number} <pod-name> | grep -A5 Events
+kubectl describe pod -n {namespace} <pod-name> | grep -A10 Events
 ```
 
 **Common Causes:**
@@ -293,17 +304,23 @@ kubectl describe pod -n k8s-ee-pr-{number} <pod-name> | grep -A5 Events
 | Cause | Solution |
 |-------|----------|
 | Image doesn't exist | Check GHCR for the tag |
-| Auth failed | Verify imagePullSecrets |
+| Auth failed (401) | Token expired - re-run workflow |
+| Missing imagePullSecret | Check `ghcr-secret` exists |
 | Wrong tag | Check commit SHA matches |
 
 **Resolution:**
 ```bash
-# Verify image exists
-docker pull ghcr.io/genesluna/k8s-ephemeral-environments/demo-app:pr-{number}
+# Check if ghcr-secret exists
+kubectl get secret ghcr-secret -n {namespace}
 
-# Check image pull secret
-kubectl get secret -n k8s-ee-pr-{number}
+# Verify image exists locally
+docker pull ghcr.io/{org}/{repo}/{image}:pr-{number}
+
+# If token expired (401 Unauthorized), re-run the workflow to refresh credentials
+# The ghcr-secret uses GITHUB_TOKEN which expires after workflow completion
 ```
+
+**Note:** The `ghcr-secret` imagePullSecret uses a workflow-scoped `GITHUB_TOKEN`. If pods restart after the workflow completes (e.g., due to OOM or node eviction), image pulls may fail with `401 Unauthorized`. Re-running the workflow refreshes the token.
 
 ### Init Container Stuck
 

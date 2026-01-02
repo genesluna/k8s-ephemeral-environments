@@ -111,6 +111,127 @@ helm upgrade arc-runner-set \
    kubectl describe pods -n arc-runners
    ```
 
+### Jobs Queued but Listener Shows "assigned job: 0"
+
+This occurs when the listener is running but GitHub isn't sending job notifications.
+
+**Step 1: Check listener logs**
+```bash
+# Get listener pod name (runs in arc-systems, not arc-runners)
+kubectl get pods -n arc-systems
+
+# Check for errors
+kubectl logs -n arc-systems -l app.kubernetes.io/name=arc-runner-set --tail=50
+```
+
+Look for:
+- `totalAvailableJobs: 0` - GitHub reports no jobs for this runner
+- Authentication errors (401, 403)
+- Network errors (`no route to host`)
+
+**Step 2: Verify runner group access**
+```bash
+# Requires gh cli with admin:org scope
+gh auth refresh -h github.com -s admin:org
+
+# Check runner groups
+gh api /orgs/koder-cat/actions/runner-groups --jq '.runner_groups[] | {name, visibility}'
+
+# Check if runners are registered
+gh api /orgs/koder-cat/actions/runners --jq '.runners[] | {name, status}'
+```
+
+Expected output:
+- Runner group should have `visibility: all`
+- If no runners listed, registration may have failed
+
+**Step 3: Check runner group in GitHub UI**
+1. Go to: https://github.com/organizations/koder-cat/settings/actions/runner-groups
+2. Click **Default** runner group
+3. Verify "Repository access" is set to **All repositories**
+
+**Step 4: Force fresh registration**
+
+If the runner isn't appearing in GitHub, reinstall the helm release:
+
+```bash
+# Uninstall
+helm uninstall arc-runner-set -n arc-runners
+
+# Wait for cleanup
+sleep 10
+
+# Reinstall with fresh registration
+helm install arc-runner-set \
+  --namespace arc-runners \
+  oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set \
+  --version 0.10.1 \
+  -f k8s/arc/values-runner-set.yaml
+
+# Verify listener starts
+kubectl get pods -n arc-systems -w
+```
+
+**Step 5: Verify GitHub App permissions**
+
+The GitHub App needs these **Organization permissions**:
+- Self-hosted runners: **Read and write**
+
+To check/update:
+1. Go to: https://github.com/organizations/koder-cat/settings/apps
+2. Click on your ARC runner app
+3. Go to **Permissions & events**
+4. Under **Organization permissions**, verify "Self-hosted runners" is "Read and write"
+5. If changed, approve the new permissions in the installation settings
+
+### Runner Crashes with "Not configured"
+
+**Symptoms:**
+- Runner pods fail with: `An error occurred: Not configured. Run config.(sh/cmd) to configure the runner.`
+- Pods fail more than 5 times
+
+**Cause:** Custom template in `values-runner-set.yaml` overrides JIT (Just-In-Time) configuration injection.
+
+**Solution:** Only set `serviceAccountName` in the template. Do NOT override container spec (image, command, resources, volumeMounts):
+
+```yaml
+# CORRECT - minimal template
+template:
+  spec:
+    serviceAccountName: arc-runner-sa
+
+# WRONG - breaks JIT config
+template:
+  spec:
+    containers:
+      - name: runner
+        image: ghcr.io/actions/actions-runner:2.321.0  # DON'T DO THIS
+        command: ["/home/runner/run.sh"]               # DON'T DO THIS
+```
+
+### Public Repos Not Getting Runners
+
+**Symptoms:**
+- Jobs from public repositories stay queued indefinitely
+- Private repos in the same org work fine
+
+**Cause:** Org-level runner groups block public repos by default.
+
+**Solution:**
+```bash
+# Check current setting
+gh api /orgs/koder-cat/actions/runner-groups/1 --jq '.allows_public_repositories'
+
+# Enable public repos
+gh api --method PATCH /orgs/koder-cat/actions/runner-groups/1 \
+  -F allows_public_repositories=true
+```
+
+Or via GitHub UI:
+1. Go to: https://github.com/organizations/koder-cat/settings/actions/runner-groups
+2. Click **Default** runner group
+3. Enable **"Allow public repositories"**
+
 ### Runner Pods CrashLooping
 
 1. Check pod logs:
@@ -127,6 +248,7 @@ helm upgrade arc-runner-set \
    - Memory limits too low
    - Image pull errors (check ARM64 compatibility)
    - ServiceAccount permissions
+   - JIT config broken (see "Runner Crashes with 'Not configured'" above)
 
 ### kubectl Access Issues in Workflow
 
