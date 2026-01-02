@@ -112,7 +112,7 @@ kubectl port-forward -n observability svc/prometheus-grafana 3000:80
 | Grafana | 128Mi | 256Mi |
 | Alertmanager | 32Mi | 64Mi |
 | node-exporter | 32Mi | 64Mi |
-| kube-state-metrics | 32Mi | 64Mi |
+| kube-state-metrics | 128Mi | 256Mi |
 | Prometheus Operator | 64Mi | 128Mi |
 
 ## Configuration
