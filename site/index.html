@@ -1,0 +1,1774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>K8s Ephemeral Environments - Full-Stack Preview Environments for Every PR</title>
+  <meta name="description" content="Open-source platform for automatic full-stack preview environments with databases. The self-hosted alternative to Vercel and Qovery.">
+  <meta name="keywords" content="preview environments, ephemeral environments, kubernetes, pull request, devops, vercel alternative, staging environments">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="K8s Ephemeral Environments">
+  <meta property="og:description" content="Full-stack preview environments with databases for every Pull Request. Open source and self-hosted.">
+  <meta property="og:image" content="https://genesluna.github.io/k8s-ephemeral-environments/og-image.png">
+  <meta property="og:url" content="https://genesluna.github.io/k8s-ephemeral-environments">
+  <meta property="og:type" content="website">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="K8s Ephemeral Environments">
+  <meta name="twitter:description" content="Full-stack preview environments with databases for every Pull Request.">
+  <meta name="twitter:image" content="https://genesluna.github.io/k8s-ephemeral-environments/og-image.png">
+
+  <!-- Canonical URL -->
+  <link rel="canonical" href="https://genesluna.github.io/k8s-ephemeral-environments/">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%236366f1' rx='20' width='100' height='100'/><text x='50' y='68' font-size='50' text-anchor='middle' fill='white'>K8</text></svg>">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- External Libraries (pinned versions, no SRI - hashes break when CDNs update files) -->
+  <!-- Highlight.js -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/yaml.min.js"></script>
+
+  <!-- AOS (Animate on Scroll) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/aos/2.3.4/aos.css">
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/aos/2.3.4/aos.js"></script>
+
+  <!-- Lucide Icons -->
+  <script defer src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+
+  <style>
+    /* ========================================
+       CSS Reset & Variables
+       ======================================== */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      /* Colors */
+      --bg-primary: #0a0a0f;
+      --bg-secondary: #111118;
+      --bg-tertiary: #1a1a24;
+      --bg-card: rgba(26, 26, 36, 0.6);
+      --bg-glass: rgba(255, 255, 255, 0.03);
+
+      --text-primary: #ffffff;
+      --text-secondary: #a1a1aa;
+      --text-muted: #71717a;
+
+      --accent-primary: #6366f1;
+      --accent-primary-hover: #818cf8;
+      --accent-secondary: #06b6d4;
+      --accent-gradient: linear-gradient(135deg, #6366f1 0%, #06b6d4 100%);
+
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --error: #ef4444;
+
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-hover: rgba(255, 255, 255, 0.15);
+
+      /* Spacing */
+      --section-padding: 120px;
+      --container-width: 1200px;
+
+      /* Typography */
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+      /* Effects */
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+      --shadow-glow: 0 0 40px rgba(99, 102, 241, 0.15);
+
+      --radius-sm: 6px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --radius-xl: 24px;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg-primary);
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      color: var(--text-primary);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* ========================================
+       Typography
+       ======================================== */
+    h1, h2, h3, h4, h5, h6 {
+      font-weight: 600;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+    }
+
+    h1 { font-size: clamp(2.5rem, 5vw, 4rem); }
+    h2 { font-size: clamp(2rem, 4vw, 3rem); }
+    h3 { font-size: clamp(1.25rem, 2vw, 1.5rem); }
+
+    p {
+      color: var(--text-secondary);
+    }
+
+    a {
+      color: var(--accent-primary);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    a:hover {
+      color: var(--accent-primary-hover);
+    }
+
+    code {
+      font-family: var(--font-mono);
+      background: var(--bg-tertiary);
+      padding: 0.2em 0.4em;
+      border-radius: var(--radius-sm);
+      font-size: 0.9em;
+    }
+
+    /* ========================================
+       Layout
+       ======================================== */
+    .container {
+      max-width: var(--container-width);
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    section {
+      padding: var(--section-padding) 0;
+      position: relative;
+    }
+
+    .section-header {
+      text-align: center;
+      margin-bottom: 64px;
+    }
+
+    .section-header h2 {
+      margin-bottom: 16px;
+    }
+
+    .section-header p {
+      font-size: 1.125rem;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    /* ========================================
+       Components
+       ======================================== */
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 24px;
+      font-size: 1rem;
+      font-weight: 500;
+      border-radius: var(--radius-md);
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+
+    .btn-primary {
+      background: var(--accent-gradient);
+      color: white;
+      box-shadow: var(--shadow-glow);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 0 60px rgba(99, 102, 241, 0.25);
+      color: white;
+    }
+
+    .btn-secondary {
+      background: var(--bg-glass);
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
+      backdrop-filter: blur(10px);
+    }
+
+    .btn-secondary:hover {
+      background: var(--bg-tertiary);
+      border-color: var(--border-hover);
+      color: var(--text-primary);
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    /* Cards */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 32px;
+      backdrop-filter: blur(10px);
+      transition: all 0.3s;
+    }
+
+    .card:hover {
+      border-color: var(--border-hover);
+      transform: translateY(-4px);
+      box-shadow: var(--shadow-lg);
+    }
+
+    .card-icon {
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--accent-gradient);
+      border-radius: var(--radius-md);
+      margin-bottom: 20px;
+    }
+
+    .card-icon svg {
+      width: 24px;
+      height: 24px;
+      color: white;
+    }
+
+    .card h3 {
+      margin-bottom: 12px;
+    }
+
+    .card p {
+      font-size: 0.95rem;
+    }
+
+    /* Grid */
+    .grid {
+      display: grid;
+      gap: 24px;
+    }
+
+    .grid-2 { grid-template-columns: repeat(2, 1fr); }
+    .grid-3 { grid-template-columns: repeat(3, 1fr); }
+    .grid-4 { grid-template-columns: repeat(4, 1fr); }
+
+    @media (max-width: 1024px) {
+      .grid-4 { grid-template-columns: repeat(2, 1fr); }
+      .grid-3 { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 640px) {
+      .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    /* Badge */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: var(--bg-glass);
+      border: 1px solid var(--border-color);
+      border-radius: 999px;
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+    }
+
+    /* ========================================
+       Navigation
+       ======================================== */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1000;
+      background: rgba(10, 10, 15, 0.8);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .nav-container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 72px;
+    }
+
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 600;
+      font-size: 1.125rem;
+      color: var(--text-primary);
+    }
+
+    .nav-logo svg {
+      color: var(--accent-primary);
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+    }
+
+    .nav-links a {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover {
+      color: var(--text-primary);
+    }
+
+    .nav-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .github-stars {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      background: var(--bg-glass);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+    }
+
+    .mobile-menu-btn {
+      display: none;
+      background: none;
+      border: none;
+      color: var(--text-primary);
+      cursor: pointer;
+    }
+
+    @media (max-width: 768px) {
+      .nav-links, .github-stars {
+        display: none;
+      }
+
+      .mobile-menu-btn {
+        display: flex;
+      }
+    }
+
+    /* ========================================
+       Hero Section
+       ======================================== */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      padding-top: 120px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-bg {
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99, 102, 241, 0.15), transparent),
+        radial-gradient(ellipse 60% 40% at 80% 60%, rgba(6, 182, 212, 0.1), transparent);
+      pointer-events: none;
+    }
+
+    .hero-content {
+      position: relative;
+      text-align: center;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .hero-badge {
+      margin-bottom: 24px;
+    }
+
+    .hero h1 {
+      margin-bottom: 24px;
+      background: linear-gradient(135deg, #fff 0%, #a1a1aa 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-subtitle {
+      font-size: 1.25rem;
+      margin-bottom: 40px;
+      max-width: 700px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .hero .btn-group {
+      justify-content: center;
+    }
+
+    .hero-visual {
+      margin-top: 80px;
+      position: relative;
+    }
+
+    .terminal-window {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      box-shadow: var(--shadow-lg), var(--shadow-glow);
+      text-align: left;
+    }
+
+    .terminal-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      background: var(--bg-tertiary);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .terminal-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .terminal-dot.red { background: #ff5f57; }
+    .terminal-dot.yellow { background: #febc2e; }
+    .terminal-dot.green { background: #28c840; }
+
+    .terminal-title {
+      flex: 1;
+      text-align: center;
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+
+    .terminal-body {
+      padding: 24px;
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      line-height: 1.8;
+    }
+
+    .terminal-line {
+      display: flex;
+      gap: 12px;
+    }
+
+    .terminal-prompt {
+      color: var(--accent-secondary);
+    }
+
+    .terminal-command {
+      color: var(--text-primary);
+    }
+
+    .terminal-output {
+      color: var(--text-secondary);
+      padding-left: 24px;
+    }
+
+    .terminal-success {
+      color: var(--success);
+    }
+
+    .terminal-url {
+      color: var(--accent-primary);
+    }
+
+    /* ========================================
+       Problem Section
+       ======================================== */
+    .problems {
+      background: var(--bg-secondary);
+    }
+
+    .problem-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 24px;
+    }
+
+    .problem-card {
+      padding: 24px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      text-align: center;
+    }
+
+    .problem-icon {
+      width: 48px;
+      height: 48px;
+      margin: 0 auto 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(239, 68, 68, 0.1);
+      border-radius: var(--radius-md);
+      color: var(--error);
+    }
+
+    .problem-card h4 {
+      font-size: 1rem;
+      margin-bottom: 8px;
+    }
+
+    .problem-card p {
+      font-size: 0.875rem;
+    }
+
+    @media (max-width: 1024px) {
+      .problem-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 640px) {
+      .problem-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ========================================
+       How It Works
+       ======================================== */
+    .steps {
+      display: flex;
+      gap: 32px;
+      position: relative;
+    }
+
+    .steps::before {
+      content: '';
+      position: absolute;
+      top: 40px;
+      left: 80px;
+      right: 80px;
+      height: 2px;
+      background: var(--border-color);
+    }
+
+    .step {
+      flex: 1;
+      text-align: center;
+      position: relative;
+    }
+
+    .step-number {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--accent-gradient);
+      border-radius: 50%;
+      font-size: 2rem;
+      font-weight: 700;
+      position: relative;
+      z-index: 1;
+    }
+
+    .step h3 {
+      margin-bottom: 12px;
+    }
+
+    .step p {
+      font-size: 0.95rem;
+    }
+
+    @media (max-width: 768px) {
+      .steps {
+        flex-direction: column;
+      }
+
+      .steps::before {
+        display: none;
+      }
+    }
+
+    /* ========================================
+       Features Grid
+       ======================================== */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 24px;
+    }
+
+    @media (max-width: 1024px) {
+      .features-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 640px) {
+      .features-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ========================================
+       Comparison Table
+       ======================================== */
+    .comparison {
+      background: var(--bg-secondary);
+    }
+
+    .comparison-table-wrapper {
+      overflow-x: auto;
+    }
+
+    .comparison-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.95rem;
+    }
+
+    .comparison-table th,
+    .comparison-table td {
+      padding: 16px 24px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .comparison-table th {
+      background: var(--bg-tertiary);
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .comparison-table th:first-child {
+      border-radius: var(--radius-md) 0 0 0;
+    }
+
+    .comparison-table th:last-child {
+      border-radius: 0 var(--radius-md) 0 0;
+    }
+
+    .comparison-table td {
+      background: var(--bg-primary);
+    }
+
+    .comparison-table tr:last-child td:first-child {
+      border-radius: 0 0 0 var(--radius-md);
+    }
+
+    .comparison-table tr:last-child td:last-child {
+      border-radius: 0 0 var(--radius-md) 0;
+    }
+
+    .comparison-table .highlight {
+      background: rgba(99, 102, 241, 0.1);
+    }
+
+    .check {
+      color: var(--success);
+    }
+
+    .cross {
+      color: var(--text-muted);
+    }
+
+    /* ========================================
+       Code Example
+       ======================================== */
+    .code-section {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 48px;
+      align-items: center;
+    }
+
+    .code-content h2 {
+      margin-bottom: 16px;
+    }
+
+    .code-content p {
+      margin-bottom: 24px;
+    }
+
+    .code-block {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+
+    .code-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: var(--bg-tertiary);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .code-filename {
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+    }
+
+    .code-block pre {
+      margin: 0;
+      padding: 24px;
+      overflow-x: auto;
+    }
+
+    .code-block code {
+      background: transparent;
+      padding: 0;
+      font-size: 0.9rem;
+    }
+
+    @media (max-width: 768px) {
+      .code-section {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* ========================================
+       Observability Showcase
+       ======================================== */
+    .observability {
+      background: var(--bg-secondary);
+    }
+
+    .dashboard-tabs {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      margin-bottom: 32px;
+      flex-wrap: wrap;
+    }
+
+    .dashboard-tab {
+      padding: 12px 24px;
+      background: var(--bg-glass);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 0.95rem;
+      font-weight: 500;
+    }
+
+    .dashboard-tab:hover {
+      border-color: var(--border-hover);
+      color: var(--text-primary);
+    }
+
+    .dashboard-tab.active {
+      background: var(--accent-gradient);
+      border-color: transparent;
+      color: white;
+    }
+
+    .dashboard-image {
+      display: none;
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      border: 1px solid var(--border-color);
+      box-shadow: var(--shadow-lg);
+    }
+
+    .dashboard-image.active {
+      display: block;
+    }
+
+    .dashboard-image img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    .dashboard-caption {
+      text-align: center;
+      margin-top: 16px;
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    /* ========================================
+       Architecture
+       ======================================== */
+    .architecture-diagram {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 48px;
+    }
+
+    .flow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    .flow-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      padding: 24px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      min-width: 160px;
+    }
+
+    .flow-item svg {
+      width: 32px;
+      height: 32px;
+      color: var(--accent-primary);
+    }
+
+    .flow-item span {
+      font-weight: 500;
+      text-align: center;
+    }
+
+    .flow-arrow {
+      color: var(--text-muted);
+    }
+
+    @media (max-width: 768px) {
+      .flow {
+        flex-direction: column;
+      }
+
+      .flow-arrow {
+        transform: rotate(90deg);
+      }
+    }
+
+    /* ========================================
+       FAQ Section
+       ======================================== */
+    .faq-list {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    .faq-item {
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+
+    .faq-question {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 24px;
+      background: var(--bg-secondary);
+      border: none;
+      cursor: pointer;
+      text-align: left;
+      color: var(--text-primary);
+      font-size: 1rem;
+      font-weight: 500;
+    }
+
+    .faq-question:hover {
+      background: var(--bg-tertiary);
+    }
+
+    .faq-question svg {
+      flex-shrink: 0;
+      transition: transform 0.3s;
+      color: var(--text-muted);
+    }
+
+    .faq-item.open .faq-question svg {
+      transform: rotate(180deg);
+    }
+
+    .faq-answer {
+      display: none;
+      padding: 0 24px 20px;
+      background: var(--bg-secondary);
+    }
+
+    .faq-item.open .faq-answer {
+      display: block;
+    }
+
+    .faq-answer p {
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+
+    /* ========================================
+       CTA Section
+       ======================================== */
+    .cta {
+      text-align: center;
+      background:
+        radial-gradient(ellipse 80% 50% at 50% 100%, rgba(99, 102, 241, 0.15), transparent);
+    }
+
+    .cta h2 {
+      margin-bottom: 16px;
+    }
+
+    .cta p {
+      margin-bottom: 32px;
+      font-size: 1.125rem;
+    }
+
+    .cta .btn-group {
+      justify-content: center;
+    }
+
+    /* ========================================
+       Footer
+       ======================================== */
+    footer {
+      padding: 48px 0;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .footer-content {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 24px;
+    }
+
+    .footer-logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .footer-logo svg {
+      color: var(--accent-primary);
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 32px;
+    }
+
+    .footer-links a {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+    }
+
+    .footer-links a:hover {
+      color: var(--text-primary);
+    }
+
+    .footer-credit {
+      color: var(--text-muted);
+      font-size: 0.875rem;
+    }
+
+    @media (max-width: 640px) {
+      .footer-content {
+        flex-direction: column;
+        text-align: center;
+      }
+
+      .footer-links {
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+    }
+
+    /* ========================================
+       Focus Styles (Accessibility)
+       ======================================== */
+    .btn:focus-visible,
+    .faq-question:focus-visible,
+    .dashboard-tab:focus-visible,
+    a:focus-visible {
+      outline: 2px solid var(--accent-primary);
+      outline-offset: 2px;
+    }
+
+    /* Skip Link */
+    .skip-link {
+      position: absolute;
+      top: -50px;
+      left: 16px;
+      background: var(--accent-primary);
+      color: white;
+      padding: 12px 24px;
+      border-radius: var(--radius-md);
+      z-index: 9999;
+      transition: top 0.3s;
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .skip-link:focus {
+      top: 16px;
+    }
+
+    /* ========================================
+       Utilities
+       ======================================== */
+    .text-gradient {
+      background: var(--accent-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .mt-16 { margin-top: 64px; }
+    .mb-8 { margin-bottom: 32px; }
+
+    /* Feature List */
+    .feature-list {
+      color: var(--text-secondary);
+      margin-bottom: 24px;
+      padding-left: 20px;
+    }
+
+    .feature-list li {
+      margin-bottom: 8px;
+    }
+
+    .feature-list li:last-child {
+      margin-bottom: 0;
+    }
+
+    .text-center {
+      text-align: center;
+    }
+
+    /* Screen Reader Only (visually hidden but accessible) */
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+  </style>
+</head>
+<body>
+  <!-- Skip Link -->
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <!-- Navigation -->
+  <nav>
+    <div class="container nav-container">
+      <a href="#main-content" class="nav-logo">
+        <i data-lucide="container" width="28" height="28"></i>
+        <span>K8s-EE</span>
+      </a>
+
+      <div class="nav-links" id="mobile-nav">
+        <a href="#features">Features</a>
+        <a href="#how-it-works">How It Works</a>
+        <a href="#comparison">Compare</a>
+        <a href="https://github.com/koder-cat/k8s-ephemeral-environments/wiki" target="_blank" rel="noopener noreferrer">Docs</a>
+      </div>
+
+      <div class="nav-right">
+        <a href="https://github.com/genesluna/k8s-ephemeral-environments" target="_blank" rel="noopener noreferrer" class="github-stars">
+          <i data-lucide="star" width="16" height="16"></i>
+          <span>Star on GitHub</span>
+        </a>
+        <a href="https://github.com/genesluna/k8s-ephemeral-environments#quick-start" class="btn btn-primary" target="_blank" rel="noopener noreferrer">
+          Get Started
+        </a>
+        <button class="mobile-menu-btn" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="mobile-nav">
+          <i data-lucide="menu" width="24" height="24"></i>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <main id="main-content">
+
+  <!-- Hero Section -->
+  <section class="hero">
+    <div class="hero-bg"></div>
+    <div class="container">
+      <div class="hero-content">
+        <div class="hero-badge">
+          <span class="badge">
+            <i data-lucide="sparkles" width="14" height="14"></i>
+            Open Source & Self-Hosted
+          </span>
+        </div>
+        <h1>Preview Environments That Actually Work for Full-Stack Apps</h1>
+        <p class="hero-subtitle">
+          Automatic preview environments with real databases for every Pull Request.
+          The open-source, self-hosted alternative to Vercel and Qovery.
+        </p>
+        <div class="btn-group">
+          <a href="https://github.com/genesluna/k8s-ephemeral-environments#quick-start" class="btn btn-primary" target="_blank" rel="noopener noreferrer">
+            <i data-lucide="rocket" width="18" height="18"></i>
+            Get Started
+          </a>
+          <a href="https://github.com/genesluna/k8s-ephemeral-environments" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">
+            <i data-lucide="github" width="18" height="18"></i>
+            View on GitHub
+          </a>
+        </div>
+
+        <div class="hero-visual" data-aos="fade-up" data-aos-delay="200">
+          <div class="terminal-window">
+            <div class="terminal-header">
+              <span class="terminal-dot red"></span>
+              <span class="terminal-dot yellow"></span>
+              <span class="terminal-dot green"></span>
+              <span class="terminal-title">Terminal</span>
+            </div>
+            <div class="terminal-body">
+              <div class="terminal-line">
+                <span class="terminal-prompt">$</span>
+                <span class="terminal-command">git push origin feature/new-checkout-flow</span>
+              </div>
+              <div class="terminal-output">Enumerating objects: 15, done.</div>
+              <div class="terminal-output">Writing objects: 100% (15/15), done.</div>
+              <br>
+              <div class="terminal-line">
+                <span class="terminal-prompt">$</span>
+                <span class="terminal-command">gh pr create --title "Add new checkout flow"</span>
+              </div>
+              <div class="terminal-output">Creating pull request for feature/new-checkout-flow...</div>
+              <br>
+              <div class="terminal-output terminal-success">✓ PR Environment deploying...</div>
+              <div class="terminal-output terminal-success">✓ PostgreSQL database provisioned</div>
+              <div class="terminal-output terminal-success">✓ Redis cache provisioned</div>
+              <div class="terminal-output terminal-success">✓ Application deployed</div>
+              <br>
+              <div class="terminal-output">Preview URL: <span class="terminal-url">https://myapp-pr-42.k8s-ee.example.com</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Problem Section -->
+  <section class="problems" id="problems">
+    <div class="container">
+      <div class="section-header" data-aos="fade-up">
+        <h2>Sound Familiar?</h2>
+        <p>These common challenges slow down development teams every day.</p>
+      </div>
+
+      <div class="problem-grid">
+        <div class="problem-card" data-aos="fade-up" data-aos-delay="100">
+          <div class="problem-icon">
+            <i data-lucide="alert-triangle" width="24" height="24"></i>
+          </div>
+          <h4>Staging is Broken Again</h4>
+          <p>Shared environments are constantly in a broken state from competing changes.</p>
+        </div>
+
+        <div class="problem-card" data-aos="fade-up" data-aos-delay="200">
+          <div class="problem-icon">
+            <i data-lucide="git-pull-request" width="24" height="24"></i>
+          </div>
+          <h4>Can't Review Without Pulling</h4>
+          <p>Reviewers need to checkout code locally just to see UI changes.</p>
+        </div>
+
+        <div class="problem-card" data-aos="fade-up" data-aos-delay="300">
+          <div class="problem-icon">
+            <i data-lucide="database" width="24" height="24"></i>
+          </div>
+          <h4>Frontend-Only Previews</h4>
+          <p>Existing tools don't support full-stack apps with real databases.</p>
+        </div>
+
+        <div class="problem-card" data-aos="fade-up" data-aos-delay="400">
+          <div class="problem-icon">
+            <i data-lucide="credit-card" width="24" height="24"></i>
+          </div>
+          <h4>$500-2000/month for SaaS</h4>
+          <p>Enterprise preview tools are expensive and lock you into their platform.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section id="how-it-works">
+    <div class="container">
+      <div class="section-header" data-aos="fade-up">
+        <h2>How It Works</h2>
+        <p>Add preview environments to your repo in three simple steps.</p>
+      </div>
+
+      <div class="steps">
+        <div class="step" data-aos="fade-up" data-aos-delay="100">
+          <div class="step-number">1</div>
+          <h3>Add Config File</h3>
+          <p>Create a <code>k8s-ee.yaml</code> in your repo root to define your app and databases.</p>
+        </div>
+
+        <div class="step" data-aos="fade-up" data-aos-delay="200">
+          <div class="step-number">2</div>
+          <h3>Add Workflow</h3>
+          <p>Copy our reusable GitHub Actions workflow that handles the entire lifecycle.</p>
+        </div>
+
+        <div class="step" data-aos="fade-up" data-aos-delay="300">
+          <div class="step-number">3</div>
+          <h3>Open a PR</h3>
+          <p>Every PR automatically gets a unique preview URL with isolated resources.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section id="features">
+    <div class="container">
+      <div class="section-header" data-aos="fade-up">
+        <h2>Everything You Need</h2>
+        <p>Full-stack preview environments with all the bells and whistles.</p>
+      </div>
+
+      <div class="features-grid">
+        <div class="card" data-aos="fade-up" data-aos-delay="100">
+          <div class="card-icon">
+            <i data-lucide="database"></i>
+          </div>
+          <h3>Database per PR</h3>
+          <p>PostgreSQL, MongoDB, Redis, MariaDB, and MinIO. Each PR gets isolated databases.</p>
+        </div>
+
+        <div class="card" data-aos="fade-up" data-aos-delay="150">
+          <div class="card-icon">
+            <i data-lucide="bar-chart-3"></i>
+          </div>
+          <h3>Built-in Observability</h3>
+          <p>Prometheus metrics, Loki logs, and pre-built Grafana dashboards out of the box.</p>
+        </div>
+
+        <div class="card" data-aos="fade-up" data-aos-delay="200">
+          <div class="card-icon">
+            <i data-lucide="shield-check"></i>
+          </div>
+          <h3>Secure by Default</h3>
+          <p>Network policies, RBAC, Sealed Secrets. Each environment is completely isolated.</p>
+        </div>
+
+        <div class="card" data-aos="fade-up" data-aos-delay="250">
+          <div class="card-icon">
+            <i data-lucide="zap"></i>
+          </div>
+          <h3>Fast Deployments</h3>
+          <p>From PR open to live URL in under 10 minutes. Includes database provisioning.</p>
+        </div>
+
+        <div class="card" data-aos="fade-up" data-aos-delay="300">
+          <div class="card-icon">
+            <i data-lucide="trash-2"></i>
+          </div>
+          <h3>Auto Cleanup</h3>
+          <p>Environments are automatically destroyed when PRs are merged or closed.</p>
+        </div>
+
+        <div class="card" data-aos="fade-up" data-aos-delay="350">
+          <div class="card-icon">
+            <i data-lucide="piggy-bank"></i>
+          </div>
+          <h3>Cost Effective</h3>
+          <p>Run on your own infrastructure for ~$120/month instead of $500-2000 for SaaS.</p>
+        </div>
+
+        <div class="card" data-aos="fade-up" data-aos-delay="400">
+          <div class="card-icon">
+            <i data-lucide="file-code"></i>
+          </div>
+          <h3>Simple Config</h3>
+          <p>One YAML file defines everything. No complex setup or configuration needed.</p>
+        </div>
+
+        <div class="card" data-aos="fade-up" data-aos-delay="450">
+          <div class="card-icon">
+            <i data-lucide="github"></i>
+          </div>
+          <h3>GitHub Native</h3>
+          <p>GitHub Actions, PR comments with preview URLs, and status checks integration.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Comparison -->
+  <section class="comparison" id="comparison">
+    <div class="container">
+      <div class="section-header" data-aos="fade-up">
+        <h2>How We Compare</h2>
+        <p>See how K8s-EE stacks up against other preview environment solutions.</p>
+      </div>
+
+      <div class="comparison-table-wrapper" data-aos="fade-up">
+        <table class="comparison-table">
+          <caption class="sr-only">Comparison of preview environment platforms: K8s-EE, Vercel, Netlify, and Qovery</caption>
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th class="highlight">K8s-EE</th>
+              <th>Vercel</th>
+              <th>Netlify</th>
+              <th>Qovery</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Full-stack apps</td>
+              <td class="highlight"><span class="check"><i data-lucide="check" width="18" height="18"></i></span></td>
+              <td><span class="cross"><i data-lucide="x" width="18" height="18"></i></span></td>
+              <td><span class="cross"><i data-lucide="x" width="18" height="18"></i></span></td>
+              <td><span class="check"><i data-lucide="check" width="18" height="18"></i></span></td>
+            </tr>
+            <tr>
+              <td>Database per PR</td>
+              <td class="highlight"><span class="check"><i data-lucide="check" width="18" height="18"></i></span></td>
+              <td><span class="cross"><i data-lucide="x" width="18" height="18"></i></span></td>
+              <td><span class="cross"><i data-lucide="x" width="18" height="18"></i></span></td>
+              <td><span class="check"><i data-lucide="check" width="18" height="18"></i></span></td>
+            </tr>
+            <tr>
+              <td>Self-hosted</td>
+              <td class="highlight"><span class="check"><i data-lucide="check" width="18" height="18"></i></span></td>
+              <td><span class="cross"><i data-lucide="x" width="18" height="18"></i></span></td>
+              <td><span class="cross"><i data-lucide="x" width="18" height="18"></i></span></td>
+              <td><span class="check"><i data-lucide="check" width="18" height="18"></i></span></td>
+            </tr>
+            <tr>
+              <td>Open source</td>
+              <td class="highlight"><span class="check"><i data-lucide="check" width="18" height="18"></i></span></td>
+              <td><span class="cross"><i data-lucide="x" width="18" height="18"></i></span></td>
+              <td><span class="cross"><i data-lucide="x" width="18" height="18"></i></span></td>
+              <td>Partial</td>
+            </tr>
+            <tr>
+              <td>Built-in observability</td>
+              <td class="highlight"><span class="check"><i data-lucide="check" width="18" height="18"></i></span></td>
+              <td><span class="cross"><i data-lucide="x" width="18" height="18"></i></span></td>
+              <td><span class="cross"><i data-lucide="x" width="18" height="18"></i></span></td>
+              <td><span class="cross"><i data-lucide="x" width="18" height="18"></i></span></td>
+            </tr>
+            <tr>
+              <td>Monthly cost</td>
+              <td class="highlight">~$120</td>
+              <td>$150-600</td>
+              <td>$99-500</td>
+              <td>$300-1500</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Code Example -->
+  <section id="code-example">
+    <div class="container">
+      <div class="code-section">
+        <div class="code-content" data-aos="fade-right">
+          <h2>Simple Configuration</h2>
+          <p>
+            Define your entire environment in a single YAML file. Enable databases,
+            configure health checks, and customize resources with just a few lines.
+          </p>
+          <ul class="feature-list">
+            <li>Choose from PostgreSQL, MongoDB, Redis, MinIO, or MariaDB</li>
+            <li>Automatic health check monitoring</li>
+            <li>Resource quotas calculated automatically</li>
+            <li>Database migrations and seeding supported</li>
+          </ul>
+          <a href="https://github.com/koder-cat/k8s-ephemeral-environments/wiki/Configuration-Reference" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">
+            <i data-lucide="book-open" width="18" height="18"></i>
+            View Full Reference
+          </a>
+        </div>
+
+        <div class="code-block" data-aos="fade-left">
+          <div class="code-header">
+            <span class="code-filename">k8s-ee.yaml</span>
+          </div>
+          <pre><code class="language-yaml">projectId: myapp
+
+app:
+  port: 3000
+  healthPath: /health
+  replicas: 1
+
+databases:
+  postgresql: true
+  redis: true
+  mongodb: true
+  minio: true
+
+env:
+  NODE_ENV: production
+  LOG_LEVEL: info</code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Observability Showcase -->
+  <section class="observability" id="observability">
+    <div class="container">
+      <div class="section-header" data-aos="fade-up">
+        <h2>Built-in Observability</h2>
+        <p>Every environment comes with pre-configured Grafana dashboards for monitoring your application.</p>
+      </div>
+
+      <div class="dashboard-tabs" role="tablist" aria-label="Dashboard views" data-aos="fade-up">
+        <button class="dashboard-tab active" role="tab" id="tab-overview-btn" aria-selected="true" aria-controls="tab-overview" data-tab="overview">PR Overview</button>
+        <button class="dashboard-tab" role="tab" id="tab-metrics-btn" aria-selected="false" aria-controls="tab-metrics" data-tab="metrics">Application Metrics</button>
+        <button class="dashboard-tab" role="tab" id="tab-resources-btn" aria-selected="false" aria-controls="tab-resources" data-tab="resources">Resource Usage</button>
+      </div>
+
+      <div class="dashboard-images" data-aos="fade-up">
+        <div class="dashboard-image active" id="tab-overview" role="tabpanel" aria-labelledby="tab-overview-btn">
+          <img src="images/dashboard-overview.png" alt="PR Environment Overview Dashboard showing app status, error rate, latency, and recent logs" loading="lazy" width="1568" height="778">
+        </div>
+        <div class="dashboard-image" id="tab-metrics" role="tabpanel" aria-labelledby="tab-metrics-btn" hidden>
+          <img src="images/dashboard-metrics.png" alt="Application Metrics Dashboard showing request rates, latency percentiles, and status codes" loading="lazy" width="1568" height="670">
+        </div>
+        <div class="dashboard-image" id="tab-resources" role="tabpanel" aria-labelledby="tab-resources-btn" hidden>
+          <img src="images/dashboard-resources.png" alt="Resource Usage Dashboard showing CPU and memory usage by pod" loading="lazy" width="1568" height="778">
+        </div>
+      </div>
+
+      <p class="dashboard-caption">Real Grafana dashboards from a live PR environment</p>
+    </div>
+  </section>
+
+  <!-- Architecture -->
+  <section id="architecture">
+    <div class="container">
+      <div class="section-header" data-aos="fade-up">
+        <h2>Architecture</h2>
+        <p>See how K8s-EE creates isolated environments for each Pull Request.</p>
+      </div>
+
+      <div class="architecture-diagram" data-aos="fade-up">
+        <div class="flow">
+          <div class="flow-item">
+            <i data-lucide="git-pull-request"></i>
+            <span>PR Opened</span>
+          </div>
+          <div class="flow-arrow">
+            <i data-lucide="arrow-right" width="24" height="24"></i>
+          </div>
+          <div class="flow-item">
+            <i data-lucide="github"></i>
+            <span>GitHub Actions</span>
+          </div>
+          <div class="flow-arrow">
+            <i data-lucide="arrow-right" width="24" height="24"></i>
+          </div>
+          <div class="flow-item">
+            <i data-lucide="box"></i>
+            <span>k3s Cluster</span>
+          </div>
+          <div class="flow-arrow">
+            <i data-lucide="arrow-right" width="24" height="24"></i>
+          </div>
+          <div class="flow-item">
+            <i data-lucide="layers"></i>
+            <span>Isolated Namespace</span>
+          </div>
+          <div class="flow-arrow">
+            <i data-lucide="arrow-right" width="24" height="24"></i>
+          </div>
+          <div class="flow-item">
+            <i data-lucide="globe"></i>
+            <span>Preview URL</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-16 text-center">
+        <p class="mb-8">
+          Each namespace contains: App pods, Database instances, Network policies, Resource quotas, and Ingress rules.
+        </p>
+        <a href="https://github.com/koder-cat/k8s-ephemeral-environments/wiki/System-Overview" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">
+          <i data-lucide="info" width="18" height="18"></i>
+          View Full Architecture
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section id="faq">
+    <div class="container">
+      <div class="section-header" data-aos="fade-up">
+        <h2>Frequently Asked Questions</h2>
+        <p>Got questions? We've got answers.</p>
+      </div>
+
+      <div class="faq-list" data-aos="fade-up">
+        <div class="faq-item">
+          <button class="faq-question" id="faq-q1" aria-expanded="false" aria-controls="faq-a1">
+            How long does it take to set up?
+            <i data-lucide="chevron-down" width="20" height="20"></i>
+          </button>
+          <div class="faq-answer" id="faq-a1" aria-labelledby="faq-q1">
+            <p>Initial setup takes about 30 minutes to 1 hour, depending on your Kubernetes experience. After that, adding preview environments to a new repository takes less than 5 minutes&mdash;just add two files (config + workflow) and you're done.</p>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-question" id="faq-q2" aria-expanded="false" aria-controls="faq-a2">
+            What databases are supported?
+            <i data-lucide="chevron-down" width="20" height="20"></i>
+          </button>
+          <div class="faq-answer" id="faq-a2" aria-labelledby="faq-q2">
+            <p>K8s-EE supports PostgreSQL (via CloudNativePG), MongoDB, Redis, MariaDB, and MinIO for S3-compatible object storage. You can enable any combination of these in your config file.</p>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-question" id="faq-q3" aria-expanded="false" aria-controls="faq-a3">
+            Can I use this with GitLab or Bitbucket?
+            <i data-lucide="chevron-down" width="20" height="20"></i>
+          </button>
+          <div class="faq-answer" id="faq-a3" aria-labelledby="faq-q3">
+            <p>Currently, K8s-EE is designed for GitHub Actions and GitHub repositories. Support for GitLab CI and Bitbucket Pipelines is on the roadmap for future releases.</p>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-question" id="faq-q4" aria-expanded="false" aria-controls="faq-a4">
+            How much does the infrastructure cost?
+            <i data-lucide="chevron-down" width="20" height="20"></i>
+          </button>
+          <div class="faq-answer" id="faq-a4" aria-labelledby="faq-q4">
+            <p>A single VPS capable of running 3-5 simultaneous PR environments costs around $100-150/month from providers like Oracle Cloud, Hetzner, or DigitalOcean. This is significantly cheaper than SaaS alternatives that charge $500-2000/month.</p>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-question" id="faq-q5" aria-expanded="false" aria-controls="faq-a5">
+            Is it production-ready?
+            <i data-lucide="chevron-down" width="20" height="20"></i>
+          </button>
+          <div class="faq-answer" id="faq-a5" aria-labelledby="faq-q5">
+            <p>Yes! K8s-EE has completed Phase 1 and Phase 2 development with 34 implemented user stories. It includes security features like network policies, RBAC, resource quotas, and organization allowlists. The platform is actively maintained and used in real projects.</p>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-question" id="faq-q6" aria-expanded="false" aria-controls="faq-a6">
+            What happens when a PR is merged or closed?
+            <i data-lucide="chevron-down" width="20" height="20"></i>
+          </button>
+          <div class="faq-answer" id="faq-a6" aria-labelledby="faq-q6">
+            <p>The environment is automatically destroyed, including all databases and storage. A cleanup job also runs every 6 hours to catch any orphaned namespaces. You can also use the <code>/preserve</code> command to keep an environment running for up to 48 hours after the PR is closed.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta">
+    <div class="container">
+      <div data-aos="fade-up">
+        <h2>Ready to Ship Faster?</h2>
+        <p>Join the teams using K8s-EE to streamline their development workflow.</p>
+        <div class="btn-group">
+          <a href="https://github.com/koder-cat/k8s-ephemeral-environments/wiki" class="btn btn-primary" target="_blank" rel="noopener noreferrer">
+            <i data-lucide="book-open" width="18" height="18"></i>
+            Read the Docs
+          </a>
+          <a href="https://github.com/genesluna/k8s-ephemeral-environments" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">
+            <i data-lucide="star" width="18" height="18"></i>
+            Star on GitHub
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <div class="footer-content">
+        <div class="footer-logo">
+          <i data-lucide="container" width="24" height="24"></i>
+          <span>K8s Ephemeral Environments</span>
+        </div>
+
+        <div class="footer-links">
+          <a href="https://github.com/genesluna/k8s-ephemeral-environments" target="_blank" rel="noopener noreferrer">GitHub</a>
+          <a href="https://github.com/koder-cat/k8s-ephemeral-environments/wiki" target="_blank" rel="noopener noreferrer">Documentation</a>
+          <a href="https://github.com/genesluna/k8s-ephemeral-environments/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">Contributing</a>
+          <a href="https://github.com/genesluna/k8s-ephemeral-environments/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License (AGPL-3.0)</a>
+        </div>
+
+        <div class="footer-credit">
+          Made with &hearts; by <a href="https://github.com/genesluna" target="_blank" rel="noopener noreferrer">Genes Luna</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Wait for all scripts (including deferred) to load
+    window.addEventListener('load', function() {
+      // Initialize Lucide icons
+      if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+      }
+
+      // Initialize AOS
+      if (typeof AOS !== 'undefined') {
+        AOS.init({
+          duration: 800,
+          once: true,
+          offset: 100
+        });
+      }
+
+      // Initialize Highlight.js
+      if (typeof hljs !== 'undefined') {
+        hljs.highlightAll();
+      }
+
+      // FAQ Accordion
+      document.querySelectorAll('.faq-question').forEach(button => {
+        button.addEventListener('click', () => {
+          const item = button.parentElement;
+          const isOpen = item.classList.contains('open');
+
+          // Close all items and reset aria-expanded
+          document.querySelectorAll('.faq-item').forEach(i => {
+            i.classList.remove('open');
+            i.querySelector('.faq-question').setAttribute('aria-expanded', 'false');
+          });
+
+          // Open clicked item if it wasn't open
+          if (!isOpen) {
+            item.classList.add('open');
+            button.setAttribute('aria-expanded', 'true');
+          }
+
+          // Re-render icons after DOM change
+          if (typeof lucide !== 'undefined') {
+            lucide.createIcons();
+          }
+        });
+      });
+
+      // Dashboard tabs
+      document.querySelectorAll('.dashboard-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          const tabName = tab.dataset.tab;
+
+          // Update active tab and aria-selected
+          document.querySelectorAll('.dashboard-tab').forEach(t => {
+            t.classList.remove('active');
+            t.setAttribute('aria-selected', 'false');
+          });
+          tab.classList.add('active');
+          tab.setAttribute('aria-selected', 'true');
+
+          // Update active panel (toggle hidden attribute)
+          document.querySelectorAll('.dashboard-image').forEach(panel => {
+            panel.classList.remove('active');
+            panel.setAttribute('hidden', '');
+          });
+          const activePanel = document.getElementById(`tab-${tabName}`);
+          activePanel.classList.add('active');
+          activePanel.removeAttribute('hidden');
+        });
+      });
+
+      // Smooth scroll for anchor links
+      document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function(e) {
+          e.preventDefault();
+          const target = document.querySelector(this.getAttribute('href'));
+          if (target) {
+            target.scrollIntoView({
+              behavior: 'smooth',
+              block: 'start'
+            });
+          }
+        });
+      });
+
+      // Mobile menu toggle (basic implementation)
+      const mobileMenuBtn = document.querySelector('.mobile-menu-btn');
+      const navLinks = document.querySelector('.nav-links');
+
+      if (mobileMenuBtn) {
+        mobileMenuBtn.addEventListener('click', () => {
+          const isExpanded = mobileMenuBtn.getAttribute('aria-expanded') === 'true';
+          mobileMenuBtn.setAttribute('aria-expanded', !isExpanded);
+
+          navLinks.style.display = isExpanded ? 'none' : 'flex';
+          navLinks.style.position = 'absolute';
+          navLinks.style.top = '72px';
+          navLinks.style.left = '0';
+          navLinks.style.right = '0';
+          navLinks.style.background = 'var(--bg-primary)';
+          navLinks.style.flexDirection = 'column';
+          navLinks.style.padding = '24px';
+          navLinks.style.gap = '16px';
+          navLinks.style.borderBottom = '1px solid var(--border-color)';
+        });
+      }
+    });
+  </script>
+</body>
+</html>
