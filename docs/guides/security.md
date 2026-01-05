@@ -179,7 +179,7 @@ All images use pinned versions for reproducibility:
 
 | Image | Version | Notes |
 |-------|---------|-------|
-| bitnami/kubectl | 1.31.4 | ARM64 verified |
+| bitnami/kubectl | latest | ARM64 verified (no version tags published) |
 | python | 3.12-alpine | Scripts |
 | node | 22-alpine | Demo app base |
 

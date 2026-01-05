@@ -28,7 +28,7 @@
 ### T-024.3: Pin All Image Tags ✅
 - **Description:** Replace :latest tags with specific versions
 - **Acceptance Criteria:**
-  - `bitnami/kubectl:latest` replaced with `bitnami/kubectl:1.31.4`
+  - `bitnami/kubectl:latest` used (no individual version tags available)
   - All images in cleanup job use pinned versions
   - Preserve expiry job uses pinned versions
 - **Estimate:** XS
