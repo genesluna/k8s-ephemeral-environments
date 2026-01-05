@@ -52,9 +52,11 @@ spec:
 
           initContainers:
             # Install kubectl into shared volume
-            # Version pinned for reproducibility - ARM64 support verified
+            # Note: Using 'latest' tag because bitnami/kubectl doesn't publish
+            # individual version tags (e.g., 1.31.4). The 'latest' tag has
+            # multi-arch support including ARM64. Verified on Docker Hub.
             - name: install-kubectl
-              image: bitnami/kubectl:1.31.4
+              image: bitnami/kubectl:latest
               imagePullPolicy: IfNotPresent
               command:
                 - /bin/sh
