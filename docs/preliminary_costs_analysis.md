@@ -1,6 +1,6 @@
 # Preliminary Cloud Infrastructure Cost Analysis
 
-**Version:** 1.0
+**Version:** 2.0
 **Date:** January 2025
 **Author:** Engineering Team
 **Status:** Draft - For Planning Purposes
@@ -9,41 +9,205 @@
 
 ## Executive Summary
 
-This document provides a comprehensive cost analysis for scaling the k8s-ephemeral-environments platform from the current free-tier Oracle Cloud VPS to a production-grade cloud infrastructure capable of supporting **50 simultaneous PR environments at 80% utilization**.
+This document provides a comprehensive cost analysis for migrating the k8s-ephemeral-environments platform from the current free-tier Oracle Cloud VPS to a production-grade managed Kubernetes infrastructure with **mandatory autoscaling**.
 
-### Key Findings
+### Key Metrics
 
-| Cloud Provider | Monthly Cost (On-Demand) | Monthly Cost (Reserved/Committed) | Cost per PR |
-|----------------|--------------------------|-----------------------------------|-------------|
-| **Oracle Cloud** | $577 | $304 | $6-12 |
-| **GCP** | $915 | $682 | $14-18 |
-| **Azure** | $1,253 | $842 | $17-25 |
-| **AWS** | $1,344 | $965 | $19-27 |
+| Metric | Value |
+|--------|-------|
+| **Concurrent PR Capacity** | 40 PRs (80% of 50) |
+| **Monthly PR Throughput** | ~557 PRs |
+| **Average PR Lifecycle** | 2.15 days |
+| **Autoscaling** | **REQUIRED** |
 
-**Recommendation:** Oracle Cloud remains the most cost-effective option, offering 40-60% savings compared to AWS/GCP/Azure, primarily due to free NAT Gateway, free egress (10TB/month), and competitive compute pricing.
+### Cost Summary (with Autoscaling)
+
+| Cloud Provider | Monthly Cost | Cost per PR | Notes |
+|----------------|--------------|-------------|-------|
+| **Oracle Cloud** | $301 | **$0.54** | Best value, free networking |
+| **GCP** | $468 | $0.84 | Free control plane |
+| **Azure** | $601 | $1.08 | Free AKS tier available |
+| **AWS** | $670 | $1.20 | Most mature, highest cost |
+
+**Recommendation:** Oracle Cloud remains the most cost-effective option, offering 35-55% savings compared to AWS/GCP/Azure, primarily due to free NAT Gateway, free egress (10TB/month), and competitive compute pricing.
 
 ---
 
 ## Table of Contents
 
-1. [Current Infrastructure Analysis](#1-current-infrastructure-analysis)
-2. [Resource Requirements for 50 PRs](#2-resource-requirements-for-50-prs)
-3. [Multi-Architecture Considerations](#3-multi-architecture-considerations)
-4. [Cloud Provider Comparison](#4-cloud-provider-comparison)
-   - [AWS (EKS)](#41-aws-eks)
-   - [GCP (GKE)](#42-gcp-gke)
-   - [Azure (AKS)](#43-azure-aks)
-   - [Oracle Cloud (OKE)](#44-oracle-cloud-oke)
-5. [Hidden Costs Analysis](#5-hidden-costs-analysis)
-6. [Capacity Planning](#6-capacity-planning)
-7. [Recommendations](#7-recommendations)
-8. [Sources](#8-sources)
+1. [PR Lifecycle & Throughput Model](#1-pr-lifecycle--throughput-model)
+2. [Autoscaling Architecture (REQUIRED)](#2-autoscaling-architecture-required)
+3. [Current Infrastructure Analysis](#3-current-infrastructure-analysis)
+4. [Resource Requirements](#4-resource-requirements)
+5. [Multi-Architecture Considerations](#5-multi-architecture-considerations)
+6. [Cloud Provider Comparison](#6-cloud-provider-comparison)
+7. [Hidden Costs Analysis](#7-hidden-costs-analysis)
+8. [Capacity Planning](#8-capacity-planning)
+9. [Recommendations](#9-recommendations)
+10. [Sources](#10-sources)
 
 ---
 
-## 1. Current Infrastructure Analysis
+## 1. PR Lifecycle & Throughput Model
 
-### 1.1 Current VPS Specifications
+### 1.1 The Key Insight
+
+**Cost per PR must be calculated based on throughput, not concurrent capacity.**
+
+PRs are ephemeral by nature - they are created, used for review/testing, and destroyed when merged. The infrastructure cost is amortized across ALL PRs that flow through the system, not just the ones running at any given moment.
+
+### 1.2 PR Lifecycle Distribution
+
+| PR Type | Percentage | Avg Lifecycle | Description |
+|---------|------------|---------------|-------------|
+| **Short-lived** | 90% | ~2 days | Normal PR flow: open → review → merge |
+| **Preserved** | 10% | ~7 days | Extended testing, `/preserve` command |
+| **Weighted Average** | 100% | **2.15 days** | Used for calculations |
+
+### 1.3 Throughput Calculation
+
+```
+Concurrent Slots: 40 PRs (80% of 50 capacity)
+
+Short-lived PRs (90% of slots):
+├── Slots: 36
+├── Lifecycle: 2 days
+└── Monthly throughput: 36 × 30 / 2 = 540 PRs
+
+Preserved PRs (10% of slots):
+├── Slots: 4
+├── Lifecycle: 7 days
+└── Monthly throughput: 4 × 30 / 7 = 17 PRs
+
+TOTAL MONTHLY THROUGHPUT: ~557 PRs
+```
+
+### 1.4 Work Hours & Utilization Pattern
+
+PRs are primarily created and used during business hours:
+
+```
+Weekly Activity Pattern:
+├─ Peak (work hours):     40 concurrent PRs   │ 10 hrs × 5 days = 50 hrs (30%)
+├─ Off-peak (evening):    15-20 concurrent    │ 6 hrs × 5 days = 30 hrs (18%)
+├─ Night (midnight-6am):  5-10 concurrent     │ 8 hrs × 5 days = 40 hrs (24%)
+└─ Weekend:               5-10 concurrent     │ 48 hrs (28%)
+
+Weighted Average Utilization: ~45% of peak capacity
+```
+
+### 1.5 Cost per PR Formula
+
+```
+Cost per PR = Monthly Infrastructure Cost / Monthly PR Throughput
+            = $301 (Oracle example) / 557 PRs
+            = $0.54 per PR
+```
+
+**This is the key metric for evaluating infrastructure efficiency.**
+
+---
+
+## 2. Autoscaling Architecture (REQUIRED)
+
+### 2.1 Why Autoscaling is Mandatory
+
+Without autoscaling, you pay for peak capacity 24/7:
+
+| Scenario | Monthly Compute Cost | Utilization | Waste |
+|----------|---------------------|-------------|-------|
+| **No autoscaling** | $432 | 100% billed | 55% wasted |
+| **With autoscaling** | $195 | 45% billed | 0% wasted |
+| **Savings** | **$237/month** | | **55%** |
+
+**Autoscaling is not optional - it's required for cost-effective operation.**
+
+### 2.2 Target Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Managed Kubernetes (EKS/GKE/AKS/OKE)                 │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                 FIXED: System Node Pool                          │   │
+│  │                 (Always running, cannot scale down)              │   │
+│  │                                                                  │   │
+│  │   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │   │
+│  │   │ Observability│  │     ARC      │  │   Ingress    │          │   │
+│  │   │  Prometheus  │  │  Controller  │  │  Controller  │          │   │
+│  │   │  Loki        │  │              │  │  (Traefik)   │          │   │
+│  │   │  Grafana     │  │              │  │              │          │   │
+│  │   └──────────────┘  └──────────────┘  └──────────────┘          │   │
+│  │                                                                  │   │
+│  │   Resources: ~4-8 vCPU, 16-24GB RAM                              │   │
+│  │   Cost: ~$100-150/month (FIXED)                                  │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                 VARIABLE: PR Node Pool                           │   │
+│  │                 (Autoscales 0-N based on demand)                 │   │
+│  │                                                                  │   │
+│  │   Peak (work hours):        ████████████████████  40 PRs        │   │
+│  │   Off-peak (evening):       ████████████          20 PRs        │   │
+│  │   Night/Weekend:            ████                   8 PRs        │   │
+│  │                                                                  │   │
+│  │   Scaling triggers:                                              │   │
+│  │   ├── Scale UP:   PR created → pending pods → add node          │   │
+│  │   ├── Scale DOWN: PR closed → pods terminated → remove node     │   │
+│  │   └── Hibernation: Low activity detected → consolidate nodes    │   │
+│  │                                                                  │   │
+│  │   Cost: $0-400/month (VARIABLE, ~45% avg utilization)            │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                 FIXED: Infrastructure                            │   │
+│  │                                                                  │   │
+│  │   Control Plane ─── NAT Gateway ─── Load Balancer ─── Storage   │   │
+│  │                                                                  │   │
+│  │   Cost: $25-175/month (varies by cloud)                          │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### 2.3 Autoscaling Components by Cloud
+
+| Cloud | Node Autoscaler | Serverless Option | Recommended |
+|-------|-----------------|-------------------|-------------|
+| **AWS** | Karpenter, Cluster Autoscaler | Fargate | Karpenter |
+| **GCP** | Cluster Autoscaler | GKE Autopilot | Autopilot |
+| **Azure** | Cluster Autoscaler (VMSS) | ACI | Cluster Autoscaler |
+| **Oracle** | Cluster Autoscaler | Virtual Nodes | Cluster Autoscaler |
+
+### 2.4 Autoscaling Requirements
+
+| Requirement | Purpose | Priority |
+|-------------|---------|----------|
+| **Resource requests on all pods** | Scheduler needs to know resource needs | CRITICAL |
+| **Node autoscaler configured** | Scale nodes based on pending pods | CRITICAL |
+| **Separate node pools** | Isolate system from PR workloads | HIGH |
+| **PodDisruptionBudgets** | Safe node drain during scale-down | HIGH |
+| **Pod priorities** | System pods don't get evicted | MEDIUM |
+| **Scale-down delay** | Avoid thrashing on bursty workloads | MEDIUM |
+
+### 2.5 Cost Breakdown: Fixed vs Variable
+
+| Component | Type | Oracle | GCP | Azure | AWS |
+|-----------|------|--------|-----|-------|-----|
+| Control Plane | Fixed | $0 | $0 | $0 | $73 |
+| NAT Gateway | Fixed | $0 | $64 | $66 | $66 |
+| Load Balancer | Fixed | $10 | $18 | $18 | $18 |
+| Storage (PVCs) | Fixed | $15 | $20 | $20 | $16 |
+| System Node Pool | Fixed | $150 | $150 | $150 | $150 |
+| **Fixed Subtotal** | | **$175** | **$252** | **$254** | **$323** |
+| PR Node Pool (full) | Variable | $280 | $480 | $770 | $770 |
+| PR Node Pool (45%) | Variable | $126 | $216 | $347 | $347 |
+| **Total (with autoscaling)** | | **$301** | **$468** | **$601** | **$670** |
+
+---
+
+## 3. Current Infrastructure Analysis
+
+### 3.1 Current VPS Specifications
 
 | Specification | Value |
 |---------------|-------|
@@ -56,7 +220,7 @@ This document provides a comprehensive cost analysis for scaling the k8s-ephemer
 | **Architecture** | ARM64 (Ampere A1) |
 | **OS** | Ubuntu 24.04 LTS |
 
-### 1.2 Current Resource Utilization
+### 3.2 Current Resource Utilization
 
 Based on actual cluster measurements (`kubectl top nodes`):
 
@@ -66,7 +230,7 @@ Based on actual cluster measurements (`kubectl top nodes`):
 | **Memory** | 6.3 GB | 24 GB | **26%** |
 | **Disk** | 38 GB | 96 GB | **40%** |
 
-### 1.3 Current Workload (4 PR Environments)
+### 3.3 Current Workload (4 PR Environments)
 
 | Namespace | Actual CPU | Quota Limit | Actual Memory | Quota Limit |
 |-----------|------------|-------------|---------------|-------------|
@@ -76,22 +240,24 @@ Based on actual cluster measurements (`kubectl top nodes`):
 | todo-app-java-pr-2 | 0m | 1840m | 0Mi | 1913Mi |
 | **observability** | 195m | - | 2086Mi | - |
 
-**Key Insight:** Applications use only **1-3% of their allocated quota** at rest. The observability stack (Prometheus, Loki, Grafana) consumes the majority of baseline resources.
+**Key Insight:** Applications use only **1-3% of their allocated quota** at rest. The observability stack consumes the majority of baseline resources.
 
-### 1.4 Current VPS Capacity Limits
+### 3.4 Current Limitations
 
-| Scenario | Max PRs | Limiting Factor |
-|----------|---------|-----------------|
-| Idle/demo apps | 20-25 | Memory |
-| Light load (1-2 active builds) | 15-18 | Memory |
-| Moderate load (active testing) | 10-12 | CPU |
-| Heavy load (stress testing) | 6-8 | CPU |
+| Limitation | Impact |
+|------------|--------|
+| **Single node** | No node autoscaling possible |
+| **Fixed capacity** | Pay for peak even when idle |
+| **No HA** | Single point of failure |
+| **Limited scale** | Max 10-15 concurrent PRs |
+
+**This is why migration to managed Kubernetes with autoscaling is required for scale.**
 
 ---
 
-## 2. Resource Requirements for 50 PRs
+## 4. Resource Requirements
 
-### 2.1 Per-PR Resource Consumption
+### 4.1 Per-PR Resource Consumption
 
 Based on actual cluster measurements:
 
@@ -101,7 +267,7 @@ Based on actual cluster measurements:
 | **Active (moderate load)** | 500m | 800Mi | 3Gi avg |
 | **Active (heavy load)** | 1000m | 1.5Gi | 5Gi avg |
 
-### 2.2 Database Resource Requirements
+### 4.2 Database Resource Requirements
 
 Per the dynamic quota system in `k8s/ephemeral/resource-quota.yaml`:
 
@@ -115,42 +281,37 @@ Per the dynamic quota system in `k8s/ephemeral/resource-quota.yaml`:
 | MariaDB | +300m | +256Mi | +2Gi |
 | **All DBs** | 2100m | 2432Mi | 9Gi |
 
-### 2.3 Total Resource Calculation for 50 PRs at 80% Utilization
+### 4.3 System Node Pool Requirements (Fixed)
 
-**Assumption:** 80% utilization = 40 active PRs + 10 idle PRs at any given time.
+Components that must run 24/7:
+
+| Component | CPU | Memory | Storage | Notes |
+|-----------|-----|--------|---------|-------|
+| Prometheus | 500m | 1.5Gi | 10Gi | Metrics collection |
+| Loki | 300m | 1Gi | 5Gi | Log aggregation |
+| Grafana | 200m | 256Mi | 2Gi | Dashboards |
+| Promtail | 200m | 128Mi | - | DaemonSet |
+| ARC Controller | 200m | 256Mi | - | GitHub webhooks |
+| Ingress | 200m | 256Mi | - | Traffic routing |
+| **Total** | **~2 vCPU** | **~4Gi** | **~17Gi** | |
+| **With headroom** | **4-8 vCPU** | **16-24Gi** | **50Gi** | Recommended |
+
+### 4.4 PR Node Pool Requirements (Variable)
+
+For 40 concurrent PRs at peak:
 
 | Component | CPU | Memory |
 |-----------|-----|--------|
-| 40 active PRs (avg with PostgreSQL) | 40 × 500m = 20,000m | 40 × 800Mi = 32Gi |
-| 10 idle PRs | 10 × 15m = 150m | 10 × 150Mi = 1.5Gi |
-| Observability stack (scaled) | 1,500m | 8Gi |
-| **Subtotal** | **21,650m** | **41.5Gi** |
-| **+25% headroom** | **~28 cores** | **~52Gi** |
+| 40 PRs (avg with PostgreSQL) | 40 × 500m = 20,000m | 40 × 800Mi = 32Gi |
+| **+25% headroom** | **~25 cores** | **~40Gi** |
 
-### 2.4 Storage Requirements
-
-| Component | Storage |
-|-----------|---------|
-| Prometheus PVC | 10Gi |
-| Loki PVC | 5Gi |
-| Grafana PVC | 2Gi |
-| Alertmanager PVC | 1Gi |
-| 50 PRs × 3Gi average | 150Gi |
-| **Total** | **~170-200Gi** |
-
-### 2.5 Final Resource Target
-
-| Resource | Minimum Required | Recommended (with headroom) |
-|----------|------------------|----------------------------|
-| **vCPUs** | 22 cores | 32 cores |
-| **Memory** | 42 GB | 64-128 GB |
-| **Storage** | 170 GB | 200 GB |
+**This scales down to near-zero during nights/weekends with autoscaling.**
 
 ---
 
-## 3. Multi-Architecture Considerations
+## 5. Multi-Architecture Considerations
 
-### 3.1 ARM vs x86 Support by Cloud Provider
+### 5.1 ARM vs x86 Support by Cloud Provider
 
 | Cloud | ARM Support | ARM Regions | ARM Instance Types | Maturity |
 |-------|-------------|-------------|-------------------|----------|
@@ -159,28 +320,7 @@ Per the dynamic quota system in `k8s/ephemeral/resource-quota.yaml`:
 | **GCP** | Limited | 5 regions only | Tau T2A | Preview/Limited |
 | **Azure** | Limited | 14 regions | Cobalt 100 (Dpsv6) | Recently GA |
 
-### 3.2 GCP ARM Limitations
-
-GCP Tau T2A instances are only available in:
-- us-central1 (Iowa)
-- us-east1 (South Carolina)
-- us-west1 (Oregon)
-- europe-west4 (Netherlands)
-- asia-southeast1 (Singapore)
-
-**Impact:** Not suitable for global deployments requiring ARM consistency.
-
-### 3.3 Azure ARM Limitations
-
-Azure Cobalt 100 VMs (Dpsv6/Dpdsv6) are available in 14 regions:
-- Canada Central, Central US, East US, East US 2
-- Germany West Central, Japan East, Mexico Central
-- North Europe, Southeast Asia, Sweden Central
-- Switzerland North, UAE North, West Europe, West US 2
-
-**Impact:** Better coverage than GCP, but still limited compared to x86.
-
-### 3.4 Recommendation
+### 5.2 Recommendation
 
 **Favor x86 for maximum compatibility.** Use ARM only when:
 - Deploying to AWS (mature Graviton ecosystem)
@@ -191,409 +331,306 @@ Azure Cobalt 100 VMs (Dpsv6/Dpdsv6) are available in 14 regions:
 
 ---
 
-## 4. Cloud Provider Comparison
+## 6. Cloud Provider Comparison
 
-### 4.1 AWS (EKS)
+### 6.1 AWS (EKS)
 
-#### 4.1.1 Architecture
+#### Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        AWS EKS                              │
-│  ┌─────────────────┐  ┌─────────────────────────────────┐  │
-│  │  EKS Control    │  │         VPC                      │  │
-│  │  Plane ($73/mo) │  │  ┌─────────────────────────────┐ │  │
-│  └─────────────────┘  │  │  Private Subnets (2 AZs)    │ │  │
-│                       │  │  ┌─────────┐  ┌─────────┐   │ │  │
-│  ┌─────────────────┐  │  │  │ Worker  │  │ Worker  │   │ │  │
-│  │  ALB Ingress    │  │  │  │ Node 1  │  │ Node 2  │   │ │  │
-│  │  ($48/mo)       │  │  │  │m6i.4xl  │  │m6i.4xl  │   │ │  │
-│  └─────────────────┘  │  │  └─────────┘  └─────────┘   │ │  │
-│                       │  └─────────────────────────────┘ │  │
-│  ┌─────────────────┐  │  ┌─────────────────────────────┐ │  │
-│  │  NAT Gateway    │  │  │  Public Subnets             │ │  │
-│  │  ($66-132/mo)   │  │  │  (NAT, ALB)                 │ │  │
-│  └─────────────────┘  │  └─────────────────────────────┘ │  │
-│                       └─────────────────────────────────┘  │
+│  ┌─────────────────┐                                        │
+│  │  EKS Control    │  ┌──────────────────────────────────┐  │
+│  │  Plane ($73/mo) │  │  System Node Pool (Fixed)        │  │
+│  └─────────────────┘  │  1× m6i.xlarge (4 vCPU, 16GB)    │  │
+│                       │  Cost: ~$150/mo                   │  │
+│  ┌─────────────────┐  └──────────────────────────────────┘  │
+│  │  Karpenter      │                                        │
+│  │  (Autoscaler)   │  ┌──────────────────────────────────┐  │
+│  └─────────────────┘  │  PR Node Pool (Autoscaled)       │  │
+│                       │  0-4× m6i.2xlarge based on demand │  │
+│  ┌─────────────────┐  │  Cost: $0-770/mo (avg $347)      │  │
+│  │  NAT + ALB      │  └──────────────────────────────────┘  │
+│  │  ($132/mo)      │                                        │
+│  └─────────────────┘                                        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-#### 4.1.2 Instance Options
+#### Cost Breakdown
 
-| Instance | vCPUs | Memory | Arch | On-Demand/hr | Spot/hr | Reserved (1yr) |
-|----------|-------|--------|------|--------------|---------|----------------|
-| m7g.4xlarge | 16 | 64 GB | ARM | $0.6528 | $0.32 | $0.432 |
-| m6i.4xlarge | 16 | 64 GB | x86 | $0.768 | $0.262 | $0.508 |
-| m7i.4xlarge | 16 | 64 GB | x86 | $0.806 | $0.28 | $0.533 |
-
-#### 4.1.3 Cost Breakdown (x86 - Production Ready)
-
-| Item | Specification | Monthly Cost |
-|------|---------------|--------------|
-| EKS Control Plane | 1 cluster @ $0.10/hr | $73 |
-| EC2 Workers | 2× m6i.4xlarge (32 vCPU, 128GB) | $1,121 |
-| NAT Gateway | 2× for HA @ $0.045/hr each | $66 |
-| NAT Data Processing | ~200 GB @ $0.045/GB | $9 |
-| Application Load Balancer | 1 ALB + ~5 LCU average | $48 |
-| EBS Storage | 200 GB gp3 @ $0.08/GB | $16 |
-| Route 53 | 1 hosted zone + queries | $2 |
-| Data Transfer Out | ~100 GB @ $0.09/GB | $9 |
-| **Total (On-Demand)** | | **$1,344/mo** |
-| **Total (1-Year Reserved)** | | **$965/mo** |
-| **Total (Spot - 70% workload)** | | **$650/mo** |
-
-#### 4.1.4 AWS ARM Option (m7g.4xlarge)
-
-| Item | On-Demand | Reserved (1yr) |
-|------|-----------|----------------|
-| EC2 Workers (ARM) | $953 | $631 |
-| Other infrastructure | $223 | $223 |
-| **Total** | **$1,176/mo** | **$854/mo** |
-
-**Savings with ARM:** ~12% compared to x86
+| Item | Type | Monthly Cost |
+|------|------|--------------|
+| EKS Control Plane | Fixed | $73 |
+| NAT Gateway (2× HA) | Fixed | $66 |
+| ALB + Data Processing | Fixed | $57 |
+| EBS Storage | Fixed | $16 |
+| Route 53 | Fixed | $2 |
+| System Node Pool | Fixed | $150 |
+| **Fixed Subtotal** | | **$364** |
+| PR Nodes (at 45% avg) | Variable | $347 |
+| **Total with Autoscaling** | | **$670/mo** |
+| **Cost per PR** | | **$1.20** |
 
 ---
 
-### 4.2 GCP (GKE)
+### 6.2 GCP (GKE)
 
-#### 4.2.1 Architecture
+#### Architecture (Autopilot Recommended)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                        GCP GKE                              │
-│  ┌─────────────────┐  ┌─────────────────────────────────┐  │
-│  │  GKE Control    │  │         VPC                      │  │
-│  │  Plane (FREE*)  │  │  ┌─────────────────────────────┐ │  │
-│  └─────────────────┘  │  │  Private Subnets (2 Zones)  │ │  │
-│  * $74.40 credit/mo   │  │  ┌─────────┐  ┌─────────┐   │ │  │
-│                       │  │  │ Worker  │  │ Worker  │   │ │  │
-│  ┌─────────────────┐  │  │  │ Node 1  │  │ Node 2  │   │ │  │
-│  │  Cloud LB       │  │  │  │n2-std-16│  │n2-std-16│   │ │  │
-│  │  ($18/mo)       │  │  │  └─────────┘  └─────────┘   │ │  │
-│  └─────────────────┘  │  └─────────────────────────────┘ │  │
-│                       │  ┌─────────────────────────────┐ │  │
-│  ┌─────────────────┐  │  │  Cloud NAT                  │ │  │
-│  │  Cloud NAT      │  │  │  ($64+/mo)                  │ │  │
-│  │  ($64+/mo)      │  │  └─────────────────────────────┘ │  │
-│  └─────────────────┘  └─────────────────────────────────┘  │
+│                    GCP GKE Autopilot                        │
+│  ┌─────────────────┐                                        │
+│  │  GKE Control    │  ┌──────────────────────────────────┐  │
+│  │  Plane (FREE)   │  │  Autopilot (Serverless)          │  │
+│  └─────────────────┘  │  Pay per pod CPU/Memory/Storage  │  │
+│                       │  Automatic node management        │  │
+│  ┌─────────────────┐  │  Built-in autoscaling            │  │
+│  │  Cloud NAT      │  └──────────────────────────────────┘  │
+│  │  ($73/mo)       │                                        │
+│  └─────────────────┘  System pods: ~$150/mo (always on)     │
+│                       PR pods: ~$216/mo (45% avg)           │
+│  ┌─────────────────┐                                        │
+│  │  Cloud LB       │                                        │
+│  │  ($18/mo)       │                                        │
+│  └─────────────────┘                                        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-#### 4.2.2 Instance Options
+#### Cost Breakdown
 
-| Instance | vCPUs | Memory | Arch | On-Demand/hr | Spot/hr | Committed (1yr) |
-|----------|-------|--------|------|--------------|---------|-----------------|
-| t2a-standard-16 | 16 | 64 GB | ARM | $0.616 | ~$0.25 | $0.43 |
-| e2-standard-16 | 16 | 64 GB | x86 | $0.604 | $0.21 | $0.42 |
-| n2-standard-16 | 16 | 64 GB | x86 | $0.778 | $0.24 | $0.54 |
-
-#### 4.2.3 GKE Pricing Models
-
-**Standard Mode:**
-- Pay for VMs (Compute Engine instances)
-- Cluster management fee: $0.10/hr ($72/mo)
-- First cluster free ($74.40 monthly credit)
-
-**Autopilot Mode:**
-- Pay per pod resources
-- CPU: ~$0.04/vCPU-hr
-- Memory: ~$0.004/GB-hr
-- No node management required
-
-#### 4.2.4 Cost Breakdown (x86 - Standard Mode)
-
-| Item | Specification | Monthly Cost |
-|------|---------------|--------------|
-| GKE Control Plane | 1 cluster (free credit covers) | $0 |
-| Compute Engine | 2× n2-standard-16 (32 vCPU, 128GB) | $778 |
-| Cloud NAT | 2× for HA | $64 |
-| NAT Data Processing | ~200 GB @ $0.045/GB | $9 |
-| Cloud Load Balancer | 5 forwarding rules @ $0.025/hr | $18 |
-| Persistent Disk | 200 GB SSD @ $0.17/GB | $34 |
-| Data Transfer Out | ~100 GB @ $0.12/GB | $12 |
-| **Total (On-Demand)** | | **$915/mo** |
-| **Total (1-Year Committed)** | | **$682/mo** |
-| **Total (Spot - 70% workload)** | | **$450/mo** |
-
-#### 4.2.5 GKE Autopilot Estimate
-
-| Resource | Usage | Rate | Monthly Cost |
-|----------|-------|------|--------------|
-| CPU | ~22 vCPU average | $0.04/vCPU-hr | $642 |
-| Memory | ~52 GB average | $0.004/GB-hr | $152 |
-| Ephemeral Storage | 100 GB | $0.01/GB-hr | $73 |
-| **Total (Autopilot)** | | | **$867/mo** |
+| Item | Type | Monthly Cost |
+|------|------|--------------|
+| GKE Control Plane | Fixed | $0 (free credit) |
+| Cloud NAT + Data | Fixed | $73 |
+| Cloud Load Balancer | Fixed | $18 |
+| Persistent Disk | Fixed | $34 |
+| System Pods (Autopilot) | Fixed | $150 |
+| **Fixed Subtotal** | | **$275** |
+| PR Pods (at 45% avg) | Variable | $216 |
+| **Total with Autoscaling** | | **$468/mo** |
+| **Cost per PR** | | **$0.84** |
 
 ---
 
-### 4.3 Azure (AKS)
+### 6.3 Azure (AKS)
 
-#### 4.3.1 Architecture
+#### Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        Azure AKS                            │
-│  ┌─────────────────┐  ┌─────────────────────────────────┐  │
-│  │  AKS Control    │  │         VNet                     │  │
-│  │  Plane (FREE*)  │  │  ┌─────────────────────────────┐ │  │
-│  └─────────────────┘  │  │  Private Subnets (2 AZs)    │ │  │
-│  * No SLA on free tier│  │  ┌─────────┐  ┌─────────┐   │ │  │
-│                       │  │  │ Worker  │  │ Worker  │   │ │  │
-│  ┌─────────────────┐  │  │  │ Node 1  │  │ Node 2  │   │ │  │
-│  │  Standard LB    │  │  │  │D16s_v5  │  │D16s_v5  │   │ │  │
-│  │  ($18/mo)       │  │  │  └─────────┘  └─────────┘   │ │  │
-│  └─────────────────┘  │  └─────────────────────────────┘ │  │
-│                       │  ┌─────────────────────────────┐ │  │
-│  ┌─────────────────┐  │  │  NAT Gateway               │ │  │
-│  │  NAT Gateway    │  │  │  ($66+/mo)                 │ │  │
-│  │  ($66+/mo)      │  │  └─────────────────────────────┘ │  │
-│  └─────────────────┘  └─────────────────────────────────┘  │
+│  ┌─────────────────┐                                        │
+│  │  AKS Control    │  ┌──────────────────────────────────┐  │
+│  │  Plane (FREE)   │  │  System Node Pool (Fixed)        │  │
+│  └─────────────────┘  │  1× D4s_v5 (4 vCPU, 16GB)        │  │
+│                       │  Cost: ~$150/mo                   │  │
+│  ┌─────────────────┐  └──────────────────────────────────┘  │
+│  │  Cluster        │                                        │
+│  │  Autoscaler     │  ┌──────────────────────────────────┐  │
+│  └─────────────────┘  │  PR Node Pool (Autoscaled)       │  │
+│                       │  0-4× D8s_v5 based on demand      │  │
+│  ┌─────────────────┐  │  Cost: $0-770/mo (avg $347)      │  │
+│  │  NAT + LB       │  └──────────────────────────────────┘  │
+│  │  ($84/mo)       │                                        │
+│  └─────────────────┘                                        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-#### 4.3.2 AKS Pricing Tiers
+#### Cost Breakdown
 
-| Tier | Control Plane Cost | SLA | Max Nodes | Best For |
-|------|-------------------|-----|-----------|----------|
-| **Free** | $0 | None | ~10 recommended | Dev/Test |
-| **Standard** | $0.10/hr (~$73/mo) | 99.9-99.95% | 5,000 | Production |
-| **Premium** | $0.60/hr (~$438/mo) | 99.9-99.95% + LTS | 5,000 | Enterprise |
-
-#### 4.3.3 Instance Options
-
-| Instance | vCPUs | Memory | Arch | On-Demand/hr | Spot/hr | Reserved (1yr) |
-|----------|-------|--------|------|--------------|---------|----------------|
-| D16ps_v5 | 16 | 64 GB | ARM | ~$0.62 | ~$0.15 | ~$0.40 |
-| D16s_v5 | 16 | 64 GB | x86 | $0.768 | $0.176 | ~$0.49 |
-| D16as_v5 | 16 | 64 GB | x86 AMD | $0.688 | $0.158 | ~$0.44 |
-
-#### 4.3.4 Cost Breakdown (x86 - Free Tier AKS)
-
-| Item | Specification | Monthly Cost |
-|------|---------------|--------------|
-| AKS Control Plane | Free tier (no SLA) | $0 |
-| Azure VMs | 2× D16s_v5 (32 vCPU, 128GB) | $1,121 |
-| NAT Gateway | 2× for HA @ $0.045/hr | $66 |
-| NAT Data Processing | ~200 GB @ $0.045/GB | $9 |
-| Standard Load Balancer | 5 rules @ $0.025/hr | $18 |
-| Managed Disk | 200 GB Premium SSD | $30 |
-| Data Transfer Out | ~100 GB @ $0.087/GB | $9 |
-| **Total (On-Demand, Free AKS)** | | **$1,253/mo** |
-| **Total (1-Year Reserved)** | | **$842/mo** |
-| **Total (Spot - 70% workload)** | | **$500/mo** |
-
-#### 4.3.5 With AKS Standard Tier (+SLA)
-
-| Item | Monthly Cost |
-|------|--------------|
-| Add AKS Standard tier | +$73 |
-| **Total (On-Demand)** | **$1,326/mo** |
-| **Total (Reserved)** | **$915/mo** |
+| Item | Type | Monthly Cost |
+|------|------|--------------|
+| AKS Control Plane | Fixed | $0 (free tier) |
+| NAT Gateway (2× HA) | Fixed | $66 |
+| Standard Load Balancer | Fixed | $18 |
+| Managed Disk | Fixed | $30 |
+| System Node Pool | Fixed | $150 |
+| **Fixed Subtotal** | | **$264** |
+| PR Nodes (at 45% avg) | Variable | $347 |
+| **Total with Autoscaling** | | **$601/mo** |
+| **Cost per PR** | | **$1.08** |
 
 ---
 
-### 4.4 Oracle Cloud (OKE)
+### 6.4 Oracle Cloud (OKE)
 
-#### 4.4.1 Architecture
+#### Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     Oracle Cloud OKE                        │
-│  ┌─────────────────┐  ┌─────────────────────────────────┐  │
-│  │  OKE Control    │  │         VCN                      │  │
-│  │  Plane (FREE)   │  │  ┌─────────────────────────────┐ │  │
-│  └─────────────────┘  │  │  Private Subnets            │ │  │
-│                       │  │  ┌─────────┐  ┌─────────┐   │ │  │
-│  ┌─────────────────┐  │  │  │ Worker  │  │ Worker  │   │ │  │
-│  │  Flexible LB    │  │  │  │ Node 1  │  │ Node 2  │   │ │  │
-│  │  ($10/mo)       │  │  │  │E4.Flex  │  │E4.Flex  │   │ │  │
-│  └─────────────────┘  │  │  └─────────┘  └─────────┘   │ │  │
-│                       │  └─────────────────────────────┘ │  │
-│  ┌─────────────────┐  │  ┌─────────────────────────────┐ │  │
-│  │  NAT Gateway    │  │  │  Service Gateway            │ │  │
-│  │  (INCLUDED)     │  │  │  (FREE)                     │ │  │
-│  └─────────────────┘  │  └─────────────────────────────┘ │  │
-│                       └─────────────────────────────────┘  │
+│  ┌─────────────────┐                                        │
+│  │  OKE Control    │  ┌──────────────────────────────────┐  │
+│  │  Plane (FREE)   │  │  System Node Pool (Fixed)        │  │
+│  └─────────────────┘  │  VM.Standard.E4.Flex (4 OCPU)    │  │
+│                       │  Cost: ~$150/mo                   │  │
+│  ┌─────────────────┐  └──────────────────────────────────┘  │
+│  │  Cluster        │                                        │
+│  │  Autoscaler     │  ┌──────────────────────────────────┐  │
+│  └─────────────────┘  │  PR Node Pool (Autoscaled)       │  │
+│                       │  0-2× E4.Flex (8 OCPU) on demand  │  │
+│  ┌─────────────────┐  │  Cost: $0-280/mo (avg $126)      │  │
+│  │  NAT (FREE)     │  └──────────────────────────────────┘  │
+│  │  LB ($10/mo)    │                                        │
+│  └─────────────────┘                                        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-#### 4.4.2 Oracle Cloud Unique Advantages
+#### Cost Breakdown
+
+| Item | Type | Monthly Cost |
+|------|------|--------------|
+| OKE Control Plane | Fixed | $0 |
+| NAT Gateway | Fixed | $0 (included) |
+| Flexible Load Balancer | Fixed | $10 |
+| Block Storage | Fixed | $15 |
+| System Node Pool | Fixed | $150 |
+| **Fixed Subtotal** | | **$175** |
+| PR Nodes (at 45% avg) | Variable | $126 |
+| **Total with Autoscaling** | | **$301/mo** |
+| **Cost per PR** | | **$0.54** |
+
+#### Oracle Cloud Unique Advantages
 
 | Feature | Oracle Cloud | Other Clouds |
 |---------|--------------|--------------|
-| **NAT Gateway** | Included in VCN | $66-132/mo |
+| **NAT Gateway** | Included in VCN | $66-73/mo |
 | **Egress** | 10 TB/month FREE | $0.087-0.12/GB |
 | **Control Plane** | FREE | $0-73/mo |
-| **ARM Pricing** | $0.01/OCPU-hr | $0.04-0.065/vCPU-hr |
 | **x86 Pricing** | $0.025/OCPU-hr | $0.04-0.05/vCPU-hr |
-
-#### 4.4.3 Instance Options
-
-| Instance | OCPUs | vCPUs Equiv | Memory | Arch | On-Demand/hr |
-|----------|-------|-------------|--------|------|--------------|
-| VM.Standard.A1.Flex | 16 | 16 | 64 GB | ARM | $0.16 + $0.096 = $0.256 |
-| VM.Standard.E4.Flex | 16 | 32 | 64 GB | x86 | $0.40 + $0.096 = $0.496 |
-| VM.Standard.E5.Flex | 16 | 32 | 64 GB | x86 | $0.48 + $0.128 = $0.608 |
-
-**Oracle OCPU Note:** 1 OCPU = 2 vCPUs on x86, 1 OCPU = 1 vCPU on ARM
-
-#### 4.4.4 Cost Breakdown (ARM - Ampere A1)
-
-| Item | Specification | Monthly Cost |
-|------|---------------|--------------|
-| OKE Control Plane | Free | $0 |
-| Compute (A1 Flex) | 32 OCPU @ $0.01/hr + 128GB @ $0.0015/GB-hr | $374 |
-| NAT Gateway | Included in VCN | $0 |
-| Flexible Load Balancer | 10 Mbps | $10 |
-| Block Storage | 200 GB @ $0.10/GB | $20 |
-| Data Transfer Out | 10 TB free/month | $0 |
-| **Total (On-Demand)** | | **$404/mo** |
-| **Total (Preemptible - 50% off)** | | **$217/mo** |
-
-#### 4.4.5 Cost Breakdown (x86 - E4 Flex)
-
-| Item | Specification | Monthly Cost |
-|------|---------------|--------------|
-| OKE Control Plane | Free | $0 |
-| Compute (E4 Flex) | 16 OCPU @ $0.025/hr + 128GB @ $0.0015/GB-hr | $547 |
-| NAT Gateway | Included in VCN | $0 |
-| Flexible Load Balancer | 10 Mbps | $10 |
-| Block Storage | 200 GB @ $0.10/GB | $20 |
-| Data Transfer Out | 10 TB free/month | $0 |
-| **Total (On-Demand)** | | **$577/mo** |
-| **Total (Preemptible - 50% off)** | | **$304/mo** |
 
 ---
 
-## 5. Hidden Costs Analysis
+## 7. Hidden Costs Analysis
 
-### 5.1 Costs Often Overlooked
+### 7.1 Costs Often Overlooked
 
 | Cost Item | AWS | GCP | Azure | Oracle |
 |-----------|-----|-----|-------|--------|
-| **NAT Gateway (hourly)** | $66-132/mo | $64+/mo | $66/mo | **FREE** |
+| **NAT Gateway (hourly)** | $66/mo | $64/mo | $66/mo | **FREE** |
 | **NAT Data Processing** | $0.045/GB | $0.045/GB | $0.045/GB | **FREE** |
 | **Egress (internet)** | $0.09/GB | $0.12/GB | $0.087/GB | **10TB FREE** |
 | **Cross-AZ Transfer** | $0.01/GB | $0.01/GB | $0.01/GB | **FREE** |
-| **Control Plane** | $73/mo | $0-72/mo | $0-73/mo | **FREE** |
-| **Load Balancer (idle)** | $18-48/mo | $18/mo | $18/mo | $10/mo |
-| **EBS Snapshots** | $0.05/GB | $0.04/GB | $0.05/GB | $0.025/GB |
+| **Control Plane** | $73/mo | $0 | $0 | **FREE** |
+| **Load Balancer (idle)** | $48/mo | $18/mo | $18/mo | $10/mo |
 
-### 5.2 Monthly Hidden Cost Estimate (Production Setup)
+### 7.2 Impact on Total Cost
 
-| Item | AWS | GCP | Azure | Oracle |
-|------|-----|-----|-------|--------|
-| NAT Gateway | $66 | $64 | $66 | $0 |
-| NAT Data (200GB) | $9 | $9 | $9 | $0 |
-| Egress (100GB) | $9 | $12 | $9 | $0 |
-| Control Plane | $73 | $0 | $0 | $0 |
-| LB Minimum | $48 | $18 | $18 | $10 |
-| **Total Hidden** | **$205** | **$103** | **$102** | **$10** |
+| Cloud | Compute Cost | Hidden/Fixed Costs | Total | Hidden % |
+|-------|--------------|-------------------|-------|----------|
+| AWS | $497 | $173 | $670 | 26% |
+| GCP | $366 | $102 | $468 | 22% |
+| Azure | $497 | $104 | $601 | 17% |
+| Oracle | $276 | $25 | $301 | 8% |
 
-### 5.3 Impact on Total Cost
-
-| Cloud | Compute Cost | Hidden Costs | Total | Hidden % |
-|-------|--------------|--------------|-------|----------|
-| AWS | $1,121 | $223 | $1,344 | 17% |
-| GCP | $778 | $137 | $915 | 15% |
-| Azure | $1,121 | $132 | $1,253 | 11% |
-| Oracle | $547 | $30 | $577 | 5% |
+**Oracle's minimal hidden costs are a significant competitive advantage.**
 
 ---
 
-## 6. Capacity Planning
+## 8. Capacity Planning
 
-### 6.1 Scaling Scenarios
+### 8.1 Scaling Scenarios (with Autoscaling)
 
-| PRs | Configuration | AWS | GCP | Azure | Oracle |
-|-----|---------------|-----|-----|-------|--------|
-| **10** | 1× medium node | $450 | $350 | $420 | $200 |
-| **25** | 2× small nodes | $750 | $550 | $700 | $350 |
-| **50** | 2× large nodes | $1,344 | $915 | $1,253 | $577 |
-| **100** | 4× large nodes | $2,500 | $1,700 | $2,300 | $1,100 |
+| Monthly PRs | Concurrent (peak) | Oracle | GCP | Azure | AWS |
+|-------------|-------------------|--------|-----|-------|-----|
+| **200** | 15 | $220 | $350 | $450 | $520 |
+| **400** | 30 | $270 | $420 | $540 | $610 |
+| **557** | 40 | $301 | $468 | $601 | $670 |
+| **800** | 60 | $380 | $580 | $750 | $850 |
+| **1200** | 90 | $500 | $750 | $950 | $1,100 |
 
-### 6.2 Cost per PR at Scale
+### 8.2 Cost per PR at Scale
 
-| Scale | AWS | GCP | Azure | Oracle |
-|-------|-----|-----|-------|--------|
-| 10 PRs | $45/PR | $35/PR | $42/PR | $20/PR |
-| 25 PRs | $30/PR | $22/PR | $28/PR | $14/PR |
-| 50 PRs | $27/PR | $18/PR | $25/PR | $12/PR |
-| 100 PRs | $25/PR | $17/PR | $23/PR | $11/PR |
+| Monthly Throughput | Oracle | GCP | Azure | AWS |
+|-------------------|--------|-----|-------|-----|
+| 200 PRs | $1.10 | $1.75 | $2.25 | $2.60 |
+| 400 PRs | $0.68 | $1.05 | $1.35 | $1.53 |
+| **557 PRs** | **$0.54** | **$0.84** | **$1.08** | **$1.20** |
+| 800 PRs | $0.48 | $0.73 | $0.94 | $1.06 |
+| 1200 PRs | $0.42 | $0.63 | $0.79 | $0.92 |
 
-### 6.3 Break-Even Analysis
+**Economies of scale:** Cost per PR decreases as throughput increases because fixed costs are amortized over more PRs.
 
-| Comparison | Break-Even Point | Notes |
-|------------|------------------|-------|
-| Oracle Free → Oracle Paid | 15-20 PRs | When free tier capacity exceeded |
-| Oracle → GCP | Never | Oracle always cheaper |
-| Oracle → Azure | Never | Oracle always cheaper |
-| Oracle → AWS | Never | Oracle always cheaper |
-| GCP → AWS | ~30 PRs | Minor difference at scale |
+### 8.3 Break-Even Analysis
+
+| Comparison | Notes |
+|------------|-------|
+| Oracle Free Tier → Oracle Paid | When exceeding 15-20 concurrent PRs |
+| Oracle vs GCP | Oracle always cheaper (35% savings) |
+| Oracle vs Azure | Oracle always cheaper (50% savings) |
+| Oracle vs AWS | Oracle always cheaper (55% savings) |
 
 ---
 
-## 7. Recommendations
+## 9. Recommendations
 
-### 7.1 Decision Matrix
+### 9.1 Decision Matrix
 
 | Factor | Weight | AWS | GCP | Azure | Oracle |
 |--------|--------|-----|-----|-------|--------|
-| **Cost** | 30% | 2 | 3 | 2 | 5 |
-| **Multi-arch Support** | 20% | 5 | 2 | 3 | 4 |
-| **Enterprise Features** | 15% | 5 | 4 | 5 | 3 |
-| **Ease of Migration** | 15% | 4 | 4 | 4 | 5* |
-| **Global Availability** | 10% | 5 | 5 | 5 | 4 |
-| **Managed Services** | 10% | 5 | 5 | 5 | 3 |
-| **Weighted Score** | 100% | 3.8 | 3.5 | 3.6 | **4.3** |
+| **Cost Efficiency** | 35% | 2 | 3 | 2 | 5 |
+| **Autoscaling Maturity** | 20% | 5 | 5 | 4 | 4 |
+| **Multi-arch Support** | 15% | 5 | 2 | 3 | 4 |
+| **Enterprise Features** | 10% | 5 | 4 | 5 | 3 |
+| **Ease of Migration** | 10% | 4 | 4 | 4 | 5 |
+| **Hidden Cost Transparency** | 10% | 2 | 3 | 3 | 5 |
+| **Weighted Score** | 100% | 3.5 | 3.5 | 3.2 | **4.5** |
 
-*Oracle scores highest for migration since we're already using Oracle Cloud.
-
-### 7.2 Recommendation by Use Case
-
-| Use Case | Recommended Cloud | Monthly Cost | Rationale |
-|----------|-------------------|--------------|-----------|
-| **Budget-conscious (x86)** | Oracle Cloud E4 | $304-577 | Cheapest x86 option |
-| **Budget-conscious (ARM)** | Oracle Cloud A1 | $217-404 | Cheapest overall |
-| **Multi-arch required** | AWS or Oracle | $854-1,176 | Best ARM support |
-| **Enterprise/Compliance** | AWS or Azure | $842-965 | Best enterprise support |
-| **GCP Ecosystem** | GCP | $682-915 | If using BigQuery, etc. |
-| **Current setup scale** | Oracle Cloud | $304-577 | Natural progression |
-
-### 7.3 Final Recommendation
-
-**Primary Recommendation: Stay with Oracle Cloud**
+### 9.2 Primary Recommendation: Oracle Cloud OKE
 
 | Reason | Details |
 |--------|---------|
-| **40-60% Cost Savings** | $577 vs $915-1,344/month |
-| **No Migration Required** | Already running on Oracle |
+| **55% Cost Savings vs AWS** | $301 vs $670/month |
+| **Lowest Cost per PR** | $0.54 vs $0.84-1.20 |
 | **Free Networking** | NAT Gateway + 10TB egress included |
-| **Mature ARM Support** | Ampere A1 available in all regions |
-| **Good x86 Options** | E4/E5 Flex for compatibility |
+| **No Migration Complexity** | Already running on Oracle Cloud |
+| **Good Autoscaling** | OKE Cluster Autoscaler supported |
 
-**Scaling Path:**
+### 9.3 Scaling Path
 
 ```
-Current (Free)     →    Paid Tier        →    Multi-Region
-4 OCPU, 24GB            16-32 OCPU             64+ OCPU
-10-15 PRs               50 PRs                 100+ PRs
-$0/month                $304-577/month         $1,000+/month
+Current (Free Tier)     →     Paid with Autoscaling     →     Multi-Region
+──────────────────────────────────────────────────────────────────────────
+4 OCPU, 24GB                  System: 4 OCPU fixed           System: 8 OCPU
+Single node k3s               PR Pool: 0-16 OCPU auto        PR Pool: 0-64 OCPU
+10-15 concurrent PRs          40 concurrent PRs              100+ concurrent PRs
+~200 PRs/month                ~557 PRs/month                 ~1500 PRs/month
+$0/month                      $301/month                     $800+/month
 ```
 
-### 7.4 Alternative Recommendations
+### 9.4 Alternative Recommendations
+
+**If GCP ecosystem integration is needed:**
+- GKE Autopilot: $468/month, $0.84/PR
+- Best serverless autoscaling
 
 **If enterprise compliance is required:**
-- AWS EKS with Reserved Instances: $965/month
-- Azure AKS Standard: $915/month
+- AWS EKS with Karpenter: $670/month, $1.20/PR
+- Most mature enterprise features
 
-**If maximum cost savings is critical:**
-- Oracle Cloud with Preemptible: $217-304/month
-- GCP with Spot instances: $450/month
+**If Azure ecosystem integration is needed:**
+- AKS with Cluster Autoscaler: $601/month, $1.08/PR
+- Good Azure DevOps integration
+
+### 9.5 Implementation Checklist
+
+| Task | Priority | Notes |
+|------|----------|-------|
+| Migrate to managed OKE | CRITICAL | Required for autoscaling |
+| Configure Cluster Autoscaler | CRITICAL | Enable node autoscaling |
+| Create system node pool | CRITICAL | Fixed resources for observability |
+| Create PR node pool | CRITICAL | Autoscaled for PR workloads |
+| Add resource requests to all pods | CRITICAL | Required for autoscaler decisions |
+| Configure PodDisruptionBudgets | HIGH | Safe node drain |
+| Set up pod priorities | HIGH | Protect system pods |
+| Configure scale-down delay | MEDIUM | Avoid thrashing |
+| Add node affinity rules | MEDIUM | Isolate workloads |
 
 ---
 
-## 8. Sources
+## 10. Sources
 
 ### Cloud Provider Pricing Pages
 
@@ -605,72 +642,61 @@ $0/month                $304-577/month         $1,000+/month
 - [Azure VM Pricing](https://azure.microsoft.com/en-us/pricing/details/virtual-machines/)
 - [Oracle OKE Pricing](https://www.oracle.com/cloud/cloud-native/kubernetes-engine/pricing/)
 - [Oracle Compute Pricing](https://www.oracle.com/cloud/compute/pricing/)
-- [Oracle Ampere A1 Pricing](https://www.oracle.com/cloud/compute/arm/pricing/)
+
+### Autoscaling Documentation
+
+- [AWS Karpenter](https://karpenter.sh/)
+- [GKE Autopilot](https://cloud.google.com/kubernetes-engine/docs/concepts/autopilot-overview)
+- [GKE Cluster Autoscaler](https://cloud.google.com/kubernetes-engine/docs/concepts/cluster-autoscaler)
+- [AKS Cluster Autoscaler](https://learn.microsoft.com/en-us/azure/aks/cluster-autoscaler)
+- [OKE Cluster Autoscaler](https://docs.oracle.com/en-us/iaas/Content/ContEng/Tasks/contengusingclusterautoscaler.htm)
 
 ### Networking Costs
 
 - [AWS NAT Gateway Pricing](https://aws.amazon.com/vpc/pricing/)
 - [GCP Cloud NAT Pricing](https://cloud.google.com/nat/pricing)
 - [Azure NAT Gateway Pricing](https://azure.microsoft.com/en-us/pricing/details/azure-nat-gateway/)
-- [AWS ALB Pricing](https://aws.amazon.com/elasticloadbalancing/pricing/)
-- [GCP Load Balancer Pricing](https://cloud.google.com/load-balancing/pricing)
-- [Azure Load Balancer Pricing](https://azure.microsoft.com/en-us/pricing/details/load-balancer/)
 
 ### Instance Comparison Tools
 
 - [Vantage EC2 Instance Comparison](https://instances.vantage.sh/)
-- [CloudPrice GCP Comparison](https://cloudprice.net/gcp/compute)
-- [CloudPrice Azure Comparison](https://cloudprice.net/)
-
-### Analysis Guides
-
-- [CloudZero EKS Pricing Guide](https://www.cloudzero.com/blog/eks-pricing/)
-- [CloudZero GKE Pricing Guide](https://www.cloudzero.com/blog/gke-pricing/)
-- [CloudChipr AKS Pricing](https://cloudchipr.com/blog/aks-pricing)
-- [Oracle Kubernetes Cost Comparison](https://blogs.oracle.com/cloud-infrastructure/post/kubernetes-cloud-cost-comparison-best-value)
+- [CloudPrice Multi-Cloud Comparison](https://cloudprice.net/)
 
 ---
 
-## Appendix A: Pricing Calculations
+## Appendix A: Key Formulas
 
-### A.1 AWS m6i.4xlarge Monthly Cost
-
-```
-Instance: m6i.4xlarge
-vCPUs: 16
-Memory: 64 GB
-On-Demand: $0.768/hr
-
-Monthly (730 hours):
-2 instances × $0.768/hr × 730 hrs = $1,121.28
-```
-
-### A.2 Oracle E4 Flex Monthly Cost
+### A.1 PR Throughput
 
 ```
-Instance: VM.Standard.E4.Flex
-OCPUs: 16 (= 32 vCPUs on x86)
-Memory: 128 GB
-
-OCPU Cost: 16 × $0.025/hr × 730 hrs = $292
-Memory Cost: 128 × $0.0015/hr × 730 hrs = $140.16
-Total Compute: $432.16
-
-With overhead (estimate): ~$547/month
+Monthly Throughput = Concurrent Slots × Days per Month / Avg PR Lifecycle
+                   = 40 × 30 / 2.15
+                   = 557 PRs/month
 ```
 
-### A.3 Oracle A1 Flex Monthly Cost
+### A.2 Cost per PR
 
 ```
-Instance: VM.Standard.A1.Flex
-OCPUs: 32 (= 32 vCPUs on ARM)
-Memory: 128 GB
+Cost per PR = Monthly Infrastructure Cost / Monthly PR Throughput
+            = $301 / 557
+            = $0.54 per PR
+```
 
-OCPU Cost: 32 × $0.01/hr × 730 hrs = $233.60
-Memory Cost: 128 × $0.0015/hr × 730 hrs = $140.16
-Total Compute: $373.76
+### A.3 Autoscaling Savings
 
-With overhead: ~$404/month
+```
+Savings = (1 - Average Utilization) × Variable Compute Cost
+        = (1 - 0.45) × $280
+        = $154/month (55% savings on variable costs)
+```
+
+### A.4 Total Monthly Cost
+
+```
+Total = Fixed Costs + (Variable Costs × Average Utilization)
+      = $175 + ($280 × 0.45)
+      = $175 + $126
+      = $301/month
 ```
 
 ---
@@ -680,6 +706,7 @@ With overhead: ~$404/month
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | January 2025 | Engineering Team | Initial analysis |
+| 2.0 | January 2025 | Engineering Team | Added PR lifecycle model, autoscaling requirements, corrected cost per PR calculations |
 
 ---
 
