@@ -11,6 +11,8 @@
 
 This document provides a comprehensive cost analysis for migrating the k8s-ephemeral-environments platform from the current free-tier Oracle Cloud VPS to a production-grade managed Kubernetes infrastructure with **mandatory autoscaling**.
 
+![Executive Summary Dashboard](../assets/executive_summary_dashboard.png)
+
 ### Key Metrics
 
 | Metric | Small Team (~65 devs) | Enterprise (250+ devs) |
@@ -127,6 +129,8 @@ All numerical assumptions in this document have been validated against industry 
 ---
 
 ## 2. PR Lifecycle & Throughput Model
+
+![PR Lifecycle & Autoscaling Model](../assets/pr_lifecycle_n_autoscaling_model.png)
 
 ### 2.1 The Key Insight
 
@@ -789,6 +793,8 @@ Savings:                        63% ($370/month)
 ---
 
 ## 11. Recommendations
+
+![Cloud Provider Comparison & Scaling Path](../assets/cloud_provider_comparison_n_scaling_path.png)
 
 ### 11.1 Decision Matrix
 
