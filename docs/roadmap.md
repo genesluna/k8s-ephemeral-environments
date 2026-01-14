@@ -62,7 +62,10 @@ This roadmap outlines the evolution of K8s Ephemeral Environments from a single-
 - **US-056: DORA Metrics Data Collection** *(Should, 8 pts)*
   - Record deployment events to Prometheus for per-repo DORA metrics
 
-**Key Outcome:** Developers can manage environments locally, reduce costs through automatic hibernation, and track delivery performance with DORA metrics.
+- **US-058: Database Access Credentials** *(Should, 5 pts)*
+  - Display database connection details in PR comment for DBeaver/TablePlus access
+
+**Key Outcome:** Developers can manage environments locally, reduce costs through automatic hibernation, track delivery performance with DORA metrics, and easily access databases with external tools.
 
 ---
 
@@ -256,7 +259,7 @@ Phase 2.5 (parallel) ──→ Phase 3 ──→ Phase 4
 **Future Development**
 
 *Phase 2.5 — Core Evolution*
-- Epics: 3 | Stories: 10 | Points: 81
+- Epics: 3 | Stories: 11 | Points: 86
 - Must: 1 | Should: 7 | Could: 2
 
 *Phase 3 — Cloud Scale*
@@ -268,8 +271,8 @@ Phase 2.5 (parallel) ──→ Phase 3 ──→ Phase 4
 - Must: 5 | Should: 3 | Could: 0
 
 **Totals**
-- Future: **6 epics, 23 stories, 233 points**
-- Overall: **14 epics, 57 stories, 419 points**
+- Future: **6 epics, 24 stories, 238 points**
+- Overall: **14 epics, 58 stories, 424 points**
 
 ---
 
