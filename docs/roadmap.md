@@ -291,6 +291,6 @@ For enterprise features or partnership inquiries, contact: **genes@genesluna.dev
 
 *This roadmap is a living document and will be updated as priorities evolve.*
 
-**Last Updated:** January 2025
+**Last Updated:** January 2026
 
 </div>
