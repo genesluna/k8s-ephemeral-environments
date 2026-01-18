@@ -36,6 +36,10 @@ inputs:
     description: 'Whether PR was merged (for destroyed status)'
     required: false
     default: 'false'
+  grafana-url:
+    description: 'Grafana dashboard URL (optional, auto-generated if not provided)'
+    required: false
+    default: ''
 
 outputs:
   comment-id:
@@ -92,6 +96,7 @@ runs:
         MARKER: ${{ inputs.marker }}
         RUN_URL: ${{ inputs.run-url }}
         MERGED: ${{ inputs.merged }}
+        GRAFANA_URL: ${{ inputs.grafana-url }}
       with:
         github-token: ${{ inputs.github-token }}
         script: |
@@ -105,6 +110,7 @@ runs:
           const prNumber = parseInt(process.env.PR_NUMBER, 10);
           const runUrl = process.env.RUN_URL || `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
           const merged = process.env.MERGED === 'true';
+          const grafanaUrl = process.env.GRAFANA_URL || `https://grafana.k8s-ee.genesluna.dev/d/pr-environment-overview?var-namespace=${namespace}`;
 
           let body;
 
@@ -118,6 +124,7 @@ runs:
                 '|----------|-------|',
                 '| **Status** | ✅ Deployed |',
                 `| **Preview URL** | [${previewUrl}](${previewUrl}) |`,
+                `| **Grafana** | [📊 Dashboard](${grafanaUrl}) |`,
                 `| **Namespace** | \`${namespace}\` |`,
                 `| **Commit** | \`${commitSha}\` |`,
                 `| **Branch** | \`${branchName}\` |`,
