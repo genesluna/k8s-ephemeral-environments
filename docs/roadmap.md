@@ -51,7 +51,10 @@ This roadmap outlines the evolution of K8s Ephemeral Environments from a single-
 *Directory:* `epic-9-developer-experience/`
 
 - **US-035: CLI Tool** *(Should, 8 pts)*
-  - `k8s-ee` command-line tool for local environment management
+  - `k8s-ee` command-line tool for environment variable management
+
+- **US-059: Environment Variables API** *(Should, 8 pts)*
+  - Backend service for CLI, stores and propagates secrets to PR namespaces
 
 - **US-036: Auto-Hibernation** *(Must, 13 pts)*
   - Scale environments to zero after configurable inactivity period
@@ -259,8 +262,8 @@ Phase 2.5 (parallel) ──→ Phase 3 ──→ Phase 4
 **Future Development**
 
 *Phase 2.5 — Core Evolution*
-- Epics: 3 | Stories: 11 | Points: 86
-- Must: 1 | Should: 7 | Could: 2
+- Epics: 3 | Stories: 12 | Points: 94
+- Must: 1 | Should: 8 | Could: 2
 
 *Phase 3 — Cloud Scale*
 - Epics: 1 | Stories: 5 | Points: 55
@@ -271,8 +274,8 @@ Phase 2.5 (parallel) ──→ Phase 3 ──→ Phase 4
 - Must: 5 | Should: 3 | Could: 0
 
 **Totals**
-- Future: **6 epics, 24 stories, 238 points**
-- Overall: **14 epics, 58 stories, 424 points**
+- Future: **6 epics, 25 stories, 246 points**
+- Overall: **14 epics, 59 stories, 432 points**
 
 ---
 
