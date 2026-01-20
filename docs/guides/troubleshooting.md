@@ -16,6 +16,7 @@ This guide helps diagnose and resolve common issues with PR environments.
 - [Health Check Failures](#health-check-failures)
 - [Common kubectl Commands](#common-kubectl-commands)
 - [Metrics Issues](#metrics-issues)
+- [Observability Startup Issues](#observability-startup-issues)
 - [Alert Demo Issues](#alert-demo-issues)
 
 ## Quick Diagnosis
@@ -1114,6 +1115,88 @@ kubectl exec -n observability prometheus-prometheus-prometheus-0 -- \
 | kube-state-metrics down | Check kube-state-metrics pod is running |
 
 **Best Practice:** Dashboards should use `kube_namespace_status_phase` for namespace variables since it's always available from kube-state-metrics, even when no application metrics exist yet.
+
+## Observability Startup Issues
+
+### Grafana Timeout Errors After Reboot
+
+**Symptoms:**
+- Grafana UI is slow or unresponsive after server reboot
+- Grafana logs show `Handler timeout` or `context deadline exceeded`
+- Error: `Failed getting data source" err="context canceled" uid=prometheus`
+- Dashboards show "No data" or fail to load
+
+**Diagnosis:**
+```bash
+# Check Grafana pod status (look for init container status)
+kubectl get pods -n observability -l app.kubernetes.io/name=grafana
+
+# Check Grafana logs for errors
+kubectl logs -n observability -l app.kubernetes.io/name=grafana -c grafana --tail=50
+
+# Check if Prometheus is ready
+kubectl exec -n observability prometheus-prometheus-prometheus-0 -c prometheus -- wget -qO- http://localhost:9090/-/ready
+
+# Check if Loki is ready
+kubectl exec -n observability loki-0 -c loki -- wget -qO- http://localhost:3100/ready
+```
+
+**Root Cause:**
+After a server reboot, all services start simultaneously. If Grafana starts before Prometheus or Loki are ready, it experiences timeout errors trying to connect to its datasources.
+
+**Solution:**
+Grafana is now configured with init containers that wait for dependencies:
+
+```
+wait-for-prometheus → wait-for-loki → grafana starts
+```
+
+This is configured in `k8s/observability/kube-prometheus-stack/values.yaml`:
+
+```yaml
+grafana:
+  extraInitContainers:
+    - name: wait-for-prometheus
+      image: busybox:1.36
+      command: [wait for Prometheus ready endpoint]
+    - name: wait-for-loki
+      image: busybox:1.36
+      command: [wait for Loki ready endpoint]
+```
+
+**If issues persist:**
+
+| Cause | Solution |
+|-------|----------|
+| Init container stuck on Prometheus | Check Prometheus pod: `kubectl get pods -n observability -l app.kubernetes.io/name=prometheus` |
+| Init container stuck on Loki | Check Loki pod: `kubectl get pods -n observability -l app.kubernetes.io/name=loki` |
+| Grafana pod in CrashLoopBackOff | Check logs: `kubectl logs -n observability -l app.kubernetes.io/name=grafana -c grafana` |
+| Persistent timeout after startup | Restart Grafana: `kubectl rollout restart deployment prometheus-grafana -n observability` |
+
+### Grafana Init Container Stuck
+
+**Symptoms:**
+- Grafana pod shows `Init:1/2` or `Init:0/2` for extended period
+- Init container logs show repeated "not ready, waiting..." messages
+
+**Diagnosis:**
+```bash
+# Check which init container is running
+kubectl describe pod -n observability -l app.kubernetes.io/name=grafana | grep -A10 "Init Containers:"
+
+# Check init container logs
+kubectl logs -n observability -l app.kubernetes.io/name=grafana -c wait-for-prometheus
+kubectl logs -n observability -l app.kubernetes.io/name=grafana -c wait-for-loki
+```
+
+**Resolution:**
+
+| Init Container | Dependency | Check Command |
+|----------------|------------|---------------|
+| wait-for-prometheus | Prometheus | `kubectl get pods -n observability -l app.kubernetes.io/name=prometheus` |
+| wait-for-loki | Loki | `kubectl get pods -n observability -l app.kubernetes.io/name=loki` |
+
+Fix the dependency issue first, then the init container will complete automatically.
 
 ## Alert Demo Issues
 

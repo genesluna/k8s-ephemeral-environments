@@ -81,6 +81,34 @@ grafana:
       cpu: 200m
       memory: 256Mi
 
+  # Init containers to wait for dependencies before starting Grafana
+  # This prevents timeout errors on system reboot
+  extraInitContainers:
+    - name: wait-for-prometheus
+      image: busybox:1.36
+      command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for Prometheus to be ready..."
+          until wget -q --spider http://prometheus-prometheus.observability.svc.cluster.local:9090/-/ready; do
+            echo "Prometheus not ready, waiting..."
+            sleep 5
+          done
+          echo "Prometheus is ready!"
+    - name: wait-for-loki
+      image: busybox:1.36
+      command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for Loki to be ready..."
+          until wget -q --spider http://loki.observability.svc.cluster.local:3100/ready; do
+            echo "Loki not ready, waiting..."
+            sleep 5
+          done
+          echo "Loki is ready!"
+
   # Persistence for dashboards and settings
   persistence:
     enabled: true

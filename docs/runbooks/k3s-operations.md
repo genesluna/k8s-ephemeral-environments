@@ -214,14 +214,59 @@ sudo cp /etc/rancher/k3s/k3s.yaml /root/k3s-backup.yaml
 
 k3s is configured to start automatically. After reboot:
 
-1. Wait ~1 minute for services to start
-2. Verify cluster:
-   ```bash
-   kubectl get nodes
-   kubectl get pods -n kube-system
-   ```
+1. **k3s starts automatically** (~30 seconds)
+2. **Core system pods start** (kube-system namespace)
+3. **Operators start** (CNPG, MongoDB, MinIO)
+4. **Observability stack starts** with dependency ordering:
+   - Prometheus and Loki start first
+   - Grafana waits for Prometheus and Loki to be ready (via init containers)
+   - This prevents Grafana timeout errors on startup
 
-3. All pods should recover automatically (may show restarts)
+### Verify Recovery
+
+```bash
+# Check node status
+kubectl get nodes
+
+# Check system pods
+kubectl get pods -n kube-system
+
+# Check observability (Grafana should show Init:0/2 → Running)
+kubectl get pods -n observability
+
+# Watch Grafana startup with init containers
+kubectl get pods -n observability -l app.kubernetes.io/name=grafana -w
+```
+
+### Expected Timeline
+
+| Time After Boot | Expected State |
+|-----------------|----------------|
+| 30s | k3s service running, node Ready |
+| 1-2 min | kube-system pods running |
+| 2-3 min | Prometheus and Loki ready |
+| 3-4 min | Grafana ready (after init containers complete) |
+
+### Grafana Init Containers
+
+Grafana is configured with init containers that wait for dependencies:
+
+```
+wait-for-prometheus → wait-for-loki → grafana starts
+```
+
+You can monitor this with:
+
+```bash
+# Check init container progress
+kubectl logs -n observability -l app.kubernetes.io/name=grafana -c wait-for-prometheus
+kubectl logs -n observability -l app.kubernetes.io/name=grafana -c wait-for-loki
+```
+
+> **Note:** If Grafana shows `Init:1/2` for extended periods, check if Loki is healthy:
+> ```bash
+> kubectl get pods -n observability -l app.kubernetes.io/name=loki
+> ```
 
 ## Related Runbooks
 

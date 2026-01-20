@@ -40,6 +40,24 @@ This directory contains the configuration for the k8s-ephemeral-environments obs
    └───────────┘ └───────────┘ └───────────┘ └───────────┘
 ```
 
+## Startup Dependencies
+
+Grafana depends on Prometheus and Loki being ready before it can function properly. To prevent timeout errors after server reboots, Grafana is configured with init containers that wait for its dependencies:
+
+```
+┌─────────────────────┐     ┌─────────────────────┐     ┌─────────────────────┐
+│ wait-for-prometheus │ ──▶ │   wait-for-loki     │ ──▶ │   Grafana starts    │
+│   (init container)  │     │   (init container)  │     │                     │
+└─────────────────────┘     └─────────────────────┘     └─────────────────────┘
+```
+
+This ensures:
+- Prometheus is ready to serve metrics queries
+- Loki is ready to serve log queries
+- Grafana dashboards load without errors
+
+See the `extraInitContainers` section in [kube-prometheus-stack/values.yaml](./kube-prometheus-stack/values.yaml) for the configuration.
+
 ## Quick Start
 
 ### 1. Deploy Prometheus + Grafana

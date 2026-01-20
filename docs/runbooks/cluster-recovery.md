@@ -304,18 +304,18 @@ kubectl wait --for=condition=available deployment/minio-operator -n minio-operat
 
 ### Phase 3: Observability
 
+> **Important:** Deploy Loki before kube-prometheus-stack. Grafana has init containers that wait for both Prometheus and Loki to be ready before starting, ensuring no timeout errors on startup.
+
 ```bash
 # 1. Create namespace
 kubectl create namespace observability
 
-# 2. Deploy kube-prometheus-stack (includes Prometheus + Grafana)
+# 2. Add Helm repositories
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
-  -n observability \
-  -f k8s/observability/kube-prometheus-stack/values.yaml
-
-# 3. Deploy Loki
 helm repo add grafana https://grafana.github.io/helm-charts
+helm repo update
+
+# 3. Deploy Loki FIRST (Grafana depends on it)
 helm upgrade --install loki grafana/loki \
   -n observability \
   -f k8s/observability/loki/values.yaml
@@ -325,9 +325,28 @@ helm upgrade --install promtail grafana/promtail \
   -n observability \
   -f k8s/observability/promtail/values.yaml
 
-# 5. Apply Grafana ingress
+# 5. Wait for Loki to be ready
+kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=loki -n observability --timeout=300s
+
+# 6. Deploy kube-prometheus-stack (includes Prometheus + Grafana)
+# Note: Release name is "prometheus", not "kube-prometheus-stack"
+helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+  -n observability \
+  -f k8s/observability/kube-prometheus-stack/values.yaml
+
+# 7. Apply Grafana ingress
 kubectl apply -f k8s/observability/grafana-ingress.yaml
+
+# 8. Verify Grafana init containers complete successfully
+kubectl get pods -n observability -l app.kubernetes.io/name=grafana -w
 ```
+
+**Grafana Startup Sequence:**
+1. Init container `wait-for-prometheus` checks Prometheus readiness
+2. Init container `wait-for-loki` checks Loki readiness
+3. Grafana container starts only after both dependencies are ready
+
+This prevents the timeout errors and "Failed getting data source" issues that occurred previously when Grafana started before its datasources were ready.
 
 ### Phase 4: GitHub Runners
 
