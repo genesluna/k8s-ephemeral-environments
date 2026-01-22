@@ -73,13 +73,14 @@ grafana:
   enabled: true
 
   # Resource limits
+  # Note: Grafana with dashboards/plugins uses ~500-600Mi at runtime
   resources:
     requests:
-      cpu: 50m
-      memory: 128Mi
-    limits:
-      cpu: 200m
+      cpu: 100m
       memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
 
   # Init containers to wait for dependencies before starting Grafana
   # This prevents timeout errors on system reboot

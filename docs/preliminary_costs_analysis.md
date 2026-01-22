@@ -383,7 +383,7 @@ Components that must run 24/7:
 |-----------|-----|--------|---------|-------|
 | Prometheus | 500m | 1.5Gi | 10Gi | Metrics collection |
 | Loki | 300m | 1Gi | 5Gi | Log aggregation |
-| Grafana | 200m | 256Mi | 2Gi | Dashboards |
+| Grafana | 500m | 768Mi | 2Gi | Dashboards |
 | Promtail | 200m | 128Mi | - | DaemonSet |
 | ARC Controller | 200m | 256Mi | - | GitHub webhooks |
 | Ingress | 200m | 256Mi | - | Traffic routing |

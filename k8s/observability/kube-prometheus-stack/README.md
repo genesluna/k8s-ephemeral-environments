@@ -109,7 +109,7 @@ kubectl port-forward -n observability svc/prometheus-grafana 3000:80
 | Component | Memory Request | Memory Limit |
 |-----------|----------------|--------------|
 | Prometheus | 512Mi | 1536Mi |
-| Grafana | 128Mi | 256Mi |
+| Grafana | 256Mi | 768Mi |
 | Alertmanager | 32Mi | 64Mi |
 | node-exporter | 32Mi | 64Mi |
 | kube-state-metrics | 128Mi | 256Mi |
